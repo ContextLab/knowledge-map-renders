@@ -61,6 +61,7 @@ cd knowledge-map-renders
 │   ├── extract_scene_settings.py     # Extract camera, target, and landmark settings
 │   └── extract_automotive_paint.py   # Inspect material node trees
 ├── materials/               # Blender materials and textures
+├── images/                  # Screenshots and example outputs
 ├── setup.sh                 # Installation script
 ├── requirements.txt         # Python dependencies
 └── README.md
@@ -76,6 +77,35 @@ Key parameters in `scripts/blender_render.py`:
 | `RENDER_SAMPLES` | `256` | Cycles samples (quality vs. speed) |
 | `RENDER_WIDTH` | `675` | Output image width |
 | `RENDER_HEIGHT` | `1200` | Output image height |
+
+### Camera Settings
+
+The camera position and target can be adjusted using the minimal `data/camera_settings.blend` file, which contains the terrain mesh, trajectories, and landmarks with simple materials for fast viewport navigation.
+
+![Blender camera settings scene](images/blender_screenshot.png)
+
+**To adjust the camera:**
+
+1. Open `data/camera_settings.blend` in Blender
+2. Select the `MainCamera` object and adjust its position, or move the `CameraTarget` empty to change where the camera looks
+3. Use **View → Cameras → Active Camera** (or press `Numpad 0`) to preview the camera view
+4. Save the file when satisfied with the camera position
+
+**To extract updated camera settings:**
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/extract_new_camera.py
+```
+
+This prints the camera location, target location, lens, and other parameters. Copy these values into `scripts/blender_render.py` (around line 2240) to use them in the final render.
+
+**To regenerate `camera_settings.blend`:**
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/create_camera_settings.py
+```
+
+This recreates the minimal scene file from the current settings in `blender_render.py`.
 
 ## Citation
 
