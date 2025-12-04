@@ -2,6 +2,8 @@
 
 A Blender-based 3D visualization tool for rendering "knowledge landscapes" derived from educational data. Creates futuristic Tron/synthwave-style visualizations using Blender's Python API and Cycles ray tracing.
 
+![Knowledge Landscape Render](images/scene.png)
+
 ## Overview
 
 This project generates an artistic 3D rendering of Figure 8A (middle panel) from the paper, where:

@@ -13,10 +13,68 @@ Features:
 """
 
 import bpy
+import bmesh
 import numpy as np
 import os
 import math
+import sys
+import argparse
+import time
 from mathutils import Vector, Matrix
+
+
+# ============================================================================
+# ARGUMENT PARSING
+# ============================================================================
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description='Blender Knowledge Landscape Renderer')
+    parser.add_argument('--force-rebuild', action='store_true',
+                        help='Force rebuild scene even if cache exists')
+    # Blender passes extra args after --, so we need to handle them
+    args_list = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+    return parser.parse_args(args_list)
+
+
+# ============================================================================
+# SCENE CACHING UTILITIES
+# ============================================================================
+def is_scene_cache_valid(blend_path, script_path, data_files):
+    """
+    Check if cached .blend file is newer than script and data files.
+
+    Args:
+        blend_path: Path to the rendered_scene.blend file
+        script_path: Path to this script
+        data_files: List of data file paths to check
+
+    Returns:
+        True if cache is valid, False otherwise
+    """
+    if not os.path.exists(blend_path):
+        print(f"Cache check: {blend_path} does not exist")
+        return False
+
+    blend_mtime = os.path.getmtime(blend_path)
+
+    # Check script modification time
+    if os.path.exists(script_path):
+        script_mtime = os.path.getmtime(script_path)
+        if script_mtime > blend_mtime:
+            print(f"Cache check: Script modified more recently than cache")
+            return False
+
+    # Check data files
+    for data_file in data_files:
+        if os.path.exists(data_file):
+            data_mtime = os.path.getmtime(data_file)
+            if data_mtime > blend_mtime:
+                print(f"Cache check: Data file {os.path.basename(data_file)} modified more recently")
+                return False
+
+    print("Cache check: Cache is valid!")
+    return True
+
 
 # Get the directory of this script and project root
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.getcwd()
@@ -151,6 +209,57 @@ SYNTHWAVE_PURPLE = (0.6, 0.0, 1.0)
 SYNTHWAVE_PINK = (1.0, 0.2, 0.6)
 SYNTHWAVE_ORANGE = (1.0, 0.4, 0.0)
 SYNTHWAVE_DARK_BLUE = (0.05, 0.02, 0.15)
+
+# ============================================================================
+# SCENE CACHING - Load or Build
+# ============================================================================
+
+# Parse command-line arguments
+args = parse_args()
+
+# Define paths
+BLEND_OUTPUT = os.path.join(PROJECT_ROOT, "rendered_scene.blend")
+SCRIPT_PATH = os.path.abspath(__file__) if '__file__' in dir() else os.path.join(SCRIPT_DIR, 'blender_render.py')
+
+# List all data files to check for modifications
+DATA_FILES = [
+    os.path.join(DATA_DIR, "knowledge-heatmap-quiz2.npy"),
+    os.path.join(DATA_DIR, "lecture1-trajectory-shifted.npy"),
+    os.path.join(DATA_DIR, "lecture2-trajectory-shifted.npy"),
+    os.path.join(DATA_DIR, "lecture1-questions-shifted.npy"),
+    os.path.join(DATA_DIR, "lecture2-questions-shifted.npy"),
+    os.path.join(DATA_DIR, "general-knowledge-questions-shifted.npy"),
+]
+
+# Check if we should use cached scene
+use_cache = not args.force_rebuild and is_scene_cache_valid(BLEND_OUTPUT, SCRIPT_PATH, DATA_FILES)
+
+if use_cache:
+    print("=" * 80)
+    print("LOADING CACHED SCENE AND RENDERING")
+    print("=" * 80)
+    print(f"Loading pre-built scene from: {BLEND_OUTPUT}")
+    print("(Use --force-rebuild to rebuild from scratch)")
+    bpy.ops.wm.open_mainfile(filepath=BLEND_OUTPUT)
+    print("Scene loaded successfully!")
+
+    # Render directly and exit
+    print("Starting render from cached scene...")
+    bpy.ops.render.render(write_still=True)
+    print(f"Render complete! Saved to: {OUTPUT_FILE}")
+
+    # Exit early - no need to run rest of script
+    import sys
+    sys.exit(0)
+
+# If we get here, we're building the scene from scratch
+print("=" * 80)
+print("BUILDING SCENE FROM SCRATCH")
+print("=" * 80)
+if args.force_rebuild:
+    print("Reason: --force-rebuild flag specified")
+else:
+    print("Reason: Cache is invalid or does not exist")
 
 # ============================================================================
 # CLEAR SCENE
@@ -918,8 +1027,101 @@ def create_pbr_metal_material(name, texture_set_name, uv_scale=10.0):
 
 
 # ============================================================================
-# CREATE RECTANGULAR PRISMS FOR HEIGHTMAP
+# CREATE RECTANGULAR PRISMS FOR HEIGHTMAP (OPTIMIZED WITH BMESH)
 # ============================================================================
+def create_prisms_batch_bmesh(heightmap_norm, nx, ny, sample_rate, world_size,
+                               height_scale_min, height_scale, prism_gap,
+                               cell_world_size, dark_blue_mat, bevel_radius, bevel_segments):
+    """Create all terrain prisms as a single mesh using bmesh for performance.
+
+    This is MUCH faster than creating individual cubes with bpy.ops because:
+    - No operator overhead for each prism
+    - All geometry created in memory before linking to scene
+    - Single bevel modifier instead of thousands
+    """
+    start_time = time.time()
+    print("  Creating prisms using bmesh batch geometry...")
+
+    # Create bmesh
+    bm = bmesh.new()
+
+    prism_count = 0
+
+    # Calculate prism size
+    prism_size = cell_world_size * sample_rate - prism_gap
+    half_size = prism_size / 2.0
+
+    # Create all prisms in bmesh
+    for i in range(0, nx, sample_rate):
+        for j in range(0, ny, sample_rate):
+            height_value = heightmap_norm[i, j]
+
+            # Calculate world position
+            x = (i / nx) * world_size
+            y = (j / ny) * world_size
+            z_height = height_scale_min + height_value * height_scale
+
+            # Center of prism base
+            cx = x + half_size
+            cy = y + half_size
+
+            # Create 8 vertices for a rectangular prism (box)
+            # Bottom face (z = 0)
+            v0 = bm.verts.new((cx - half_size, cy - half_size, 0))
+            v1 = bm.verts.new((cx + half_size, cy - half_size, 0))
+            v2 = bm.verts.new((cx + half_size, cy + half_size, 0))
+            v3 = bm.verts.new((cx - half_size, cy + half_size, 0))
+
+            # Top face (z = z_height)
+            v4 = bm.verts.new((cx - half_size, cy - half_size, z_height))
+            v5 = bm.verts.new((cx + half_size, cy - half_size, z_height))
+            v6 = bm.verts.new((cx + half_size, cy + half_size, z_height))
+            v7 = bm.verts.new((cx - half_size, cy + half_size, z_height))
+
+            # Create 6 faces (each face is defined by 4 vertices in CCW order)
+            bm.faces.new([v0, v1, v2, v3])  # Bottom
+            bm.faces.new([v4, v7, v6, v5])  # Top
+            bm.faces.new([v0, v4, v5, v1])  # Front
+            bm.faces.new([v2, v6, v7, v3])  # Back
+            bm.faces.new([v0, v3, v7, v4])  # Left
+            bm.faces.new([v1, v5, v6, v2])  # Right
+
+            prism_count += 1
+
+        if i % 20 == 0:
+            print(f"    Progress: {i}/{nx} rows...")
+
+    # Create mesh from bmesh
+    mesh = bpy.data.meshes.new("TerrainPrisms")
+    bm.to_mesh(mesh)
+    bm.free()
+
+    # Create object
+    terrain_obj = bpy.data.objects.new("TerrainPrisms", mesh)
+    bpy.context.collection.objects.link(terrain_obj)
+
+    # Apply material
+    terrain_obj.data.materials.append(dark_blue_mat)
+
+    # Add bevel modifier for edge fillets
+    bevel = terrain_obj.modifiers.new(name="Bevel", type='BEVEL')
+    bevel.width = bevel_radius
+    bevel.segments = bevel_segments
+    bevel.limit_method = 'ANGLE'
+    bevel.angle_limit = 1.0472  # 60 degrees
+    bevel.profile = 0.5
+    bevel.harden_normals = True
+
+    # Set flat shading
+    for poly in mesh.polygons:
+        poly.use_smooth = False
+
+    elapsed = time.time() - start_time
+    print(f"  Created {prism_count} prisms in {elapsed:.2f} seconds using bmesh batch geometry")
+
+    return terrain_obj
+
+
 print("Creating rectangular prisms for heightmap...")
 
 nx, ny = heightmap_norm.shape
@@ -931,56 +1133,30 @@ print("  Material created")
 
 # Create prisms - sample every few cells for performance
 SAMPLE_RATE = 4  # Sample every 4th cell for faster scene creation
-prism_count = 0
 
 # Calculate cell size in world coordinates
 cell_world_size = WORLD_SIZE / nx
 
 # Quality settings for clean prisms (subtle bevel, no visible polygons)
 BEVEL_SEGMENTS = 1  # Minimal bevel segments for very subtle edge rounding
-SUBDIVISION_LEVELS = 0  # No subdivision needed for sharp rectangular look
 
-for i in range(0, nx, SAMPLE_RATE):
-    for j in range(0, ny, SAMPLE_RATE):
-        height_value = heightmap_norm[i, j]
+# Create all prisms using optimized bmesh batch geometry
+terrain_obj = create_prisms_batch_bmesh(
+    heightmap_norm=heightmap_norm,
+    nx=nx,
+    ny=ny,
+    sample_rate=SAMPLE_RATE,
+    world_size=WORLD_SIZE,
+    height_scale_min=HEIGHT_SCALE_MIN,
+    height_scale=HEIGHT_SCALE,
+    prism_gap=PRISM_GAP,
+    cell_world_size=cell_world_size,
+    dark_blue_mat=dark_blue_mat,
+    bevel_radius=PRISM_BEVEL_RADIUS,
+    bevel_segments=BEVEL_SEGMENTS
+)
 
-        # Calculate world position
-        x = (i / nx) * WORLD_SIZE
-        y = (j / ny) * WORLD_SIZE
-        # Prism height: 1-5 inches (HEIGHT_SCALE_MIN + normalized_value * HEIGHT_SCALE)
-        z_height = HEIGHT_SCALE_MIN + height_value * HEIGHT_SCALE
-
-        # Create rectangular prism (cube scaled)
-        prism_size = cell_world_size * SAMPLE_RATE - PRISM_GAP
-
-        bpy.ops.mesh.primitive_cube_add(
-            size=1,
-            location=(x + prism_size/2, y + prism_size/2, z_height/2)
-        )
-        prism = bpy.context.active_object
-        prism.scale = (prism_size, prism_size, z_height)
-        prism.name = f"Prism_{i}_{j}"
-
-        # Add bevel modifier for edge fillets only (not domed tops)
-        bevel = prism.modifiers.new(name="Bevel", type='BEVEL')
-        bevel.width = PRISM_BEVEL_RADIUS
-        bevel.segments = BEVEL_SEGMENTS
-        bevel.limit_method = 'ANGLE'
-        bevel.angle_limit = 1.0472  # 60 degrees - only bevel sharp edges
-        bevel.profile = 0.5  # Circular profile
-        bevel.harden_normals = True  # Keep faces flat, only smooth bevel
-
-        # Use flat shading - keeps tops flat, auto-smooth handles bevel edges
-        bpy.ops.object.shade_flat()
-
-        # Apply uniform dark blue automotive paint material to all prisms
-        prism.data.materials.append(dark_blue_mat)
-
-        prism_count += 1
-
-    if i % 20 == 0:
-        print(f"  Progress: {i}/{nx} rows...")
-
+prism_count = (nx // SAMPLE_RATE) * (ny // SAMPLE_RATE)
 print(f"Created {prism_count} rectangular prisms with uniform dark blue material")
 
 # ============================================================================
@@ -1009,9 +1185,10 @@ def create_wireframe_edge_material(name, edge_color, emission_strength=50.0):
 
     return mat
 
-# Create glowing wireframe material - white with additional 50% reduced intensity per user request
-WIREFRAME_COLOR = SYNTHWAVE_ORANGE  # Synthwave orange (was white)
-wireframe_edge_mat = create_wireframe_edge_material("TronWireframeEdge", WIREFRAME_COLOR, emission_strength=1.25)  # Reduced by another 50% from 2.5
+# Create glowing wireframe material - cyan with 25% increased brightness
+WIREFRAME_COLOR = SYNTHWAVE_CYAN  # Synthwave cyan
+WIREFRAME_EMISSION_STRENGTH = 1.25 * 1.25  # Increased by 25%
+wireframe_edge_mat = create_wireframe_edge_material("TronWireframeEdge", WIREFRAME_COLOR, emission_strength=WIREFRAME_EMISSION_STRENGTH)
 
 # Wireframe edge thickness (cylinder radius) - reduced by another 50% per user request
 WIREFRAME_THICKNESS = 0.001  # 0.001 feet = ~0.012 inches (reduced by another 50% from 0.002)
@@ -1021,7 +1198,7 @@ MINOR_GRID_ENABLED = True
 MINOR_GRID_SUBDIVISIONS = 5  # Divide each major grid square into 5x5
 MINOR_GRID_COLOR = (1.0, 1.0, 1.0)  # White for minor grid
 MINOR_GRID_THICKNESS = 0.0005  # Half thickness of major grid
-MINOR_GRID_EMISSION_STRENGTH = 0.5  # Dimmer than major grid (40% of major)
+MINOR_GRID_EMISSION_STRENGTH = 0.5 * 1.10  # Increased by 10%
 
 def get_max_neighbor_height(i, j, nx, ny, sample_rate):
     """Get the maximum height from all neighboring prisms around a grid corner point.
@@ -1102,58 +1279,59 @@ def create_wireframe_grid_lines():
 
     return vertices, edges
 
+def create_wireframe_from_edges(name, vertices, edges, thickness, material, subdivisions=2):
+    """Create a wireframe object from vertices and edges using NURBS curves.
+
+    This is MUCH faster than using skin modifiers because it avoids:
+    - Mode switching (edit mode)
+    - Modifier application operations
+    - Mesh conversion overhead
+    """
+    start_time = time.time()
+
+    # Create curve data
+    curve = bpy.data.curves.new(name + '_Curve', 'CURVE')
+    curve.dimensions = '3D'
+    curve.bevel_depth = thickness
+    curve.bevel_resolution = subdivisions
+    curve.fill_mode = 'FULL'
+    curve.use_fill_caps = True
+
+    # Add a polyline spline for each edge
+    for v1_idx, v2_idx in edges:
+        spline = curve.splines.new('POLY')
+        spline.points.add(1)  # We need 2 points total
+        # POLY splines use 4D homogeneous coordinates
+        spline.points[0].co = (*vertices[v1_idx], 1)
+        spline.points[1].co = (*vertices[v2_idx], 1)
+
+    # Create object from curve
+    wireframe_obj = bpy.data.objects.new(name, curve)
+    bpy.context.collection.objects.link(wireframe_obj)
+
+    # Apply material
+    wireframe_obj.data.materials.append(material)
+
+    elapsed = time.time() - start_time
+    print(f"  Created {name} with {len(edges)} curve segments in {elapsed:.2f}s")
+
+    return wireframe_obj
+
+
 # Create the wireframe mesh
 print("  Generating wireframe grid vertices and edges...")
 wf_vertices, wf_edges = create_wireframe_grid_lines()
 print(f"  Created {len(wf_vertices)} vertices and {len(wf_edges)} edges")
 
-# Create mesh from vertices and edges
-mesh = bpy.data.meshes.new("TronWireframeMesh")
-mesh.from_pydata(wf_vertices, wf_edges, [])
-mesh.update()
-
-wireframe_obj = bpy.data.objects.new("TronWireframeGrid", mesh)
-bpy.context.collection.objects.link(wireframe_obj)
-
-# Convert edges to curves for thickness
-bpy.context.view_layer.objects.active = wireframe_obj
-wireframe_obj.select_set(True)
-
-# Apply skin modifier for thickness then convert to mesh
-skin = wireframe_obj.modifiers.new(name="Skin", type='SKIN')
-
-# Enter edit mode to set skin radius
-bpy.ops.object.mode_set(mode='EDIT')
-bpy.ops.mesh.select_all(action='SELECT')
-
-# Set skin root and resize all vertices
-bpy.ops.object.mode_set(mode='OBJECT')
-
-# Set uniform skin radius for all vertices
-for v in wireframe_obj.data.skin_vertices[0].data:
-    v.radius = (WIREFRAME_THICKNESS, WIREFRAME_THICKNESS)
-    v.use_root = False
-
-# Mark first vertex as root
-if wireframe_obj.data.skin_vertices[0].data:
-    wireframe_obj.data.skin_vertices[0].data[0].use_root = True
-
-# Add subdivision for smoother tubes
-subsurf = wireframe_obj.modifiers.new(name="Subsurf", type='SUBSURF')
-subsurf.levels = 1
-subsurf.render_levels = 1
-
-# Apply the material
-wireframe_obj.data.materials.append(wireframe_edge_mat)
-
-# Apply modifiers to convert to final mesh
-bpy.ops.object.modifier_apply(modifier="Skin")
-bpy.ops.object.modifier_apply(modifier="Subsurf")
-
-# Smooth shading for tubes
-bpy.ops.object.shade_smooth()
-
-wireframe_obj.select_set(False)
+# Create optimized wireframe using NURBS curves (much faster than skin modifier)
+wireframe_obj = create_wireframe_from_edges(
+    name="TronWireframeGrid",
+    vertices=wf_vertices,
+    edges=wf_edges,
+    thickness=WIREFRAME_THICKNESS,
+    material=wireframe_edge_mat,
+    subdivisions=2
+)
 
 print(f"  Tron wireframe grid created with {len(wf_edges)} glowing edges")
 
@@ -1170,7 +1348,8 @@ if MINOR_GRID_ENABLED:
         """Create minor grid lines that subdivide each major grid cell into 5x5.
 
         These lines are positioned between the major grid lines, NOT on top of them.
-        Uses finer sample rate to interpolate heights across the terrain.
+        Uses the same max-neighbor-height logic as major gridlines to ensure minor
+        gridlines never dip below prism tops.
         """
         vertices = []
         edges = []
@@ -1198,9 +1377,9 @@ if MINOR_GRID_ENABLED:
 
             for i in range(0, nx, minor_step):
                 x = (i / nx) * WORLD_SIZE
-                # Interpolate height at this finer position
-                height_value = heightmap_norm[min(i, nx-1), min(j, ny-1)]
-                z = HEIGHT_SCALE_MIN + height_value * HEIGHT_SCALE
+                # Use max neighbor height (same logic as major grid) to prevent dipping
+                max_height_value = get_max_neighbor_height(i, j, nx, ny, SAMPLE_RATE)
+                z = HEIGHT_SCALE_MIN + max_height_value * HEIGHT_SCALE
 
                 vertices.append((x, y, z))
                 vertex_grid[(i, j)] = vertex_index
@@ -1223,8 +1402,9 @@ if MINOR_GRID_ENABLED:
 
             for j in range(0, ny, minor_step):
                 y = (j / ny) * WORLD_SIZE
-                height_value = heightmap_norm[min(i, nx-1), min(j, ny-1)]
-                z = HEIGHT_SCALE_MIN + height_value * HEIGHT_SCALE
+                # Use max neighbor height (same logic as major grid) to prevent dipping
+                max_height_value = get_max_neighbor_height(i, j, nx, ny, SAMPLE_RATE)
+                z = HEIGHT_SCALE_MIN + max_height_value * HEIGHT_SCALE
 
                 # Check if we already have a vertex at this position
                 if (i, j) in vertex_grid:
@@ -1246,50 +1426,15 @@ if MINOR_GRID_ENABLED:
     print(f"  Created {len(minor_vertices)} minor grid vertices and {len(minor_edges)} edges")
 
     if len(minor_vertices) > 0 and len(minor_edges) > 0:
-        # Create mesh from vertices and edges
-        minor_mesh = bpy.data.meshes.new("MinorGridMesh")
-        minor_mesh.from_pydata(minor_vertices, minor_edges, [])
-        minor_mesh.update()
-
-        minor_grid_obj = bpy.data.objects.new("MinorWireframeGrid", minor_mesh)
-        bpy.context.collection.objects.link(minor_grid_obj)
-
-        # Set up for skin modifier
-        bpy.context.view_layer.objects.active = minor_grid_obj
-        minor_grid_obj.select_set(True)
-
-        # Apply skin modifier for thickness
-        skin = minor_grid_obj.modifiers.new(name="Skin", type='SKIN')
-
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-        # Set uniform skin radius for all vertices (thinner than major grid)
-        for v in minor_grid_obj.data.skin_vertices[0].data:
-            v.radius = (MINOR_GRID_THICKNESS, MINOR_GRID_THICKNESS)
-            v.use_root = False
-
-        # Mark first vertex as root
-        if minor_grid_obj.data.skin_vertices[0].data:
-            minor_grid_obj.data.skin_vertices[0].data[0].use_root = True
-
-        # Add subdivision for smoother tubes
-        subsurf = minor_grid_obj.modifiers.new(name="Subsurf", type='SUBSURF')
-        subsurf.levels = 1
-        subsurf.render_levels = 1
-
-        # Apply the material
-        minor_grid_obj.data.materials.append(minor_grid_mat)
-
-        # Apply modifiers
-        bpy.ops.object.modifier_apply(modifier="Skin")
-        bpy.ops.object.modifier_apply(modifier="Subsurf")
-
-        # Smooth shading
-        bpy.ops.object.shade_smooth()
-
-        minor_grid_obj.select_set(False)
+        # Create optimized minor grid using NURBS curves (reuse the function from major grid)
+        minor_grid_obj = create_wireframe_from_edges(
+            name="MinorWireframeGrid",
+            vertices=minor_vertices,
+            edges=minor_edges,
+            thickness=MINOR_GRID_THICKNESS,
+            material=minor_grid_mat,
+            subdivisions=1  # Fewer subdivisions for thinner lines
+        )
 
         print(f"  Minor grid created with {len(minor_edges)} white subdivision lines")
     else:
@@ -1499,28 +1644,77 @@ sideroad = create_glass_tube_road(sideroad_coords, "Sideroad", SIDEROAD_WIDTH/2,
 print("Neon tube trajectories created")
 
 # ============================================================================
-# CREATE METALLIC SPHERE LANDMARKS
+# CREATE METALLIC SPHERE LANDMARKS (OPTIMIZED WITH INSTANCING)
 # ============================================================================
-def create_sphere_landmark(location, radius, material, name_prefix="Sphere"):
-    # High quality sphere with very smooth surface
-    bpy.ops.mesh.primitive_uv_sphere_add(
-        radius=radius,
-        segments=128,  # Very high resolution for no visible polygons
-        ring_count=64,  # Very high resolution
-        location=location
-    )
-    obj = bpy.context.active_object
-    obj.name = f"{name_prefix}_{location[0]:.0f}_{location[1]:.0f}"
+def create_base_sphere_mesh(name, radius, segments=128, ring_count=64):
+    """Create a base sphere mesh that can be instanced.
 
-    # Subdivision for perfectly smooth surface
-    subsurf = obj.modifiers.new(name="Subdivision", type='SUBSURF')
-    subsurf.levels = 1
-    subsurf.render_levels = 2  # Higher for render
-    subsurf.subdivision_type = 'CATMULL_CLARK'
+    Uses bmesh to create high-resolution sphere geometry that will be shared
+    across all instances via linked duplicates. This is MUCH faster than
+    creating individual spheres with bpy.ops.
+    """
+    # Create mesh data
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
 
-    obj.data.materials.append(material)
-    bpy.ops.object.shade_smooth()
-    return obj
+    # Use bmesh to create sphere geometry
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=ring_count, radius=radius)
+    bm.to_mesh(mesh)
+    bm.free()
+
+    # Apply smooth shading to all polygons
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+
+    return mesh
+
+
+def create_landmark_instances(all_landmarks, base_meshes, light_energy):
+    """Create landmark instances using linked duplicates for memory efficiency.
+
+    Creates one instance per landmark using shared mesh data from base_meshes.
+    Each instance gets its own transform and material, but shares the underlying
+    geometry, drastically reducing memory usage and creation time.
+    """
+    created_spheres = []
+
+    for lm in all_landmarks:
+        prefix = lm['prefix']
+        mesh = base_meshes[prefix]
+
+        # Create linked duplicate (shares mesh data)
+        obj = bpy.data.objects.new(
+            f"{prefix}_{lm['pos'][0]:.0f}_{lm['pos'][1]:.0f}",
+            mesh
+        )
+        obj.location = lm['pos']
+
+        # Material assignment (each instance can have unique material slot)
+        if len(obj.data.materials) == 0:
+            obj.data.materials.append(lm['material'])
+        else:
+            obj.data.materials[0] = lm['material']
+
+        # Link to scene collection
+        bpy.context.collection.objects.link(obj)
+
+        # Add subdivision modifier to the instance
+        subsurf = obj.modifiers.new(name="Subdivision", type='SUBSURF')
+        subsurf.levels = 1
+        subsurf.render_levels = 2
+        subsurf.subdivision_type = 'CATMULL_CLARK'
+
+        created_spheres.append(obj)
+
+        # Add a dim white point light at the center of the sphere
+        bpy.ops.object.light_add(type='POINT', location=lm['pos'])
+        light = bpy.context.active_object
+        light.name = f"LandmarkLight_{prefix}_{lm['pos'][0]:.0f}_{lm['pos'][1]:.0f}"
+        light.data.energy = light_energy
+        light.data.color = (1.0, 1.0, 1.0)  # White light
+        light.data.shadow_soft_size = lm['radius']
+
+    return created_spheres
 
 print("Creating metallic landmark spheres with bump-mapped textures...")
 
@@ -1528,17 +1722,17 @@ print("Creating metallic landmark spheres with bump-mapped textures...")
 # Each texture set provides: diffuse, normal, roughness, metallic maps
 # UV scale controls texture detail on spheres (higher = smaller texture pattern)
 
-# Lecture 1 landmarks: Synthwave dark blue acrylic glass
-landmark1_mat = create_acrylic_glass_material("Lecture1_DarkBlueAcrylic", SYNTHWAVE_DARK_BLUE, is_clear=False)  # Synthwave dark blue
-print("  Using Synthwave Dark Blue Acrylic Glass material for lecture1 landmarks")
+# Lecture 1 landmarks: Light gray acrylic glass
+landmark1_mat = create_acrylic_glass_material("Lecture1_LightGrayAcrylic", (0.7, 0.7, 0.7), is_clear=False)  # Light gray
+print("  Using Light Gray Acrylic Glass material for lecture1 landmarks")
 
-# Lecture 2 landmarks: Synthwave purple acrylic glass
-landmark2_mat = create_acrylic_glass_material("Lecture2_PurpleAcrylic", SYNTHWAVE_PURPLE, is_clear=False)  # Synthwave purple
-print("  Using Synthwave Purple Acrylic Glass material for lecture2 landmarks")
+# Lecture 2 landmarks: Dark gray acrylic glass
+landmark2_mat = create_acrylic_glass_material("Lecture2_DarkGrayAcrylic", (0.25, 0.25, 0.25), is_clear=False)  # Dark gray
+print("  Using Dark Gray Acrylic Glass material for lecture2 landmarks")
 
-# General landmarks: Dark gray acrylic glass (unchanged)
-landmark3_mat = create_acrylic_glass_material("General_DarkGrayAcrylic", (0.15, 0.15, 0.15), is_clear=False)  # Dark gray tint
-print("  Using Dark Gray Acrylic Glass material for general landmarks")
+# General landmarks: Medium gray acrylic glass (between light and dark gray)
+landmark3_mat = create_acrylic_glass_material("General_MediumGrayAcrylic", (0.475, 0.475, 0.475), is_clear=False)  # Medium gray
+print("  Using Medium Gray Acrylic Glass material for general landmarks")
 
 # Build list of all landmarks with positions, priorities, and materials
 # Priority: general (3) > lecture2 (2) > lecture1 (1) - higher = more likely to be enlarged on overlap
@@ -1681,28 +1875,27 @@ for root, indices in groups.items():
 
 print(f"  Found {overlap_group_count} overlapping groups")
 
-# Now create all the spheres with adjusted positions and add dim white point lights inside each
-# Light energy is very dim for subtle glow effect
+# Now create all the spheres using optimized instancing
 LANDMARK_LIGHT_ENERGY = 0.05  # Reduced by 50% for subtler glow
 
-def create_landmark_with_light(lm):
-    """Create a landmark sphere with a dim point light inside."""
-    sphere = create_sphere_landmark(lm['pos'], lm['radius'], lm['material'], lm['prefix'])
+# Create base sphere meshes for instancing (one per material type)
+# This drastically reduces memory usage by sharing geometry across all instances
+print("  Creating base sphere meshes for instancing...")
+start_time = time.time()
 
-    # Add a dim white point light at the center of the sphere
-    bpy.ops.object.light_add(type='POINT', location=lm['pos'])
-    light = bpy.context.active_object
-    light.name = f"LandmarkLight_{lm['prefix']}_{lm['pos'][0]:.0f}_{lm['pos'][1]:.0f}"
-    light.data.energy = LANDMARK_LIGHT_ENERGY
-    light.data.color = (1.0, 1.0, 1.0)  # White light
-    light.data.shadow_soft_size = lm['radius']  # Full radius for diffuse glow extending to sphere edges
+base_meshes = {
+    'Lecture1': create_base_sphere_mesh('Lecture1_BaseSphere', LANDMARK_RADIUS, segments=128, ring_count=64),
+    'Lecture2': create_base_sphere_mesh('Lecture2_BaseSphere', LANDMARK_RADIUS, segments=128, ring_count=64),
+    'General': create_base_sphere_mesh('General_BaseSphere', LANDMARK_RADIUS, segments=128, ring_count=64),
+}
+print(f"  Created {len(base_meshes)} base sphere meshes")
 
-    return sphere
+# Create all landmark instances with lights using linked duplicates
+print(f"  Creating {len(all_landmarks)} landmark instances with lights...")
+created_spheres = create_landmark_instances(all_landmarks, base_meshes, LANDMARK_LIGHT_ENERGY)
 
-for lm in all_landmarks:
-    create_landmark_with_light(lm)
-
-print(f"Landmark spheres created with {len(all_landmarks)} dim white point lights")
+elapsed = time.time() - start_time
+print(f"Landmark spheres created with {len(all_landmarks)} dim white point lights in {elapsed:.2f}s (using instancing)")
 
 # ============================================================================
 # TRACTOR BEAM EFFECTS - Truncated Cone Volumetrics with Noise Texture
@@ -2286,10 +2479,38 @@ scene.render.engine = RENDER_ENGINE
 
 if RENDER_ENGINE == 'CYCLES':
     prefs = bpy.context.preferences.addons['cycles'].preferences
-    prefs.compute_device_type = 'METAL'
+
+    # Detect compute device type based on platform
+    import sys
+    if sys.platform == 'darwin':
+        # macOS - use Metal
+        prefs.compute_device_type = 'METAL'
+        print("Using Metal GPU acceleration (macOS)")
+    else:
+        # Linux/Windows - try CUDA first, then OptiX, then NONE
+        try:
+            prefs.compute_device_type = 'CUDA'
+            print("Using CUDA GPU acceleration")
+        except:
+            try:
+                prefs.compute_device_type = 'OPTIX'
+                print("Using OptiX GPU acceleration")
+            except:
+                prefs.compute_device_type = 'NONE'
+                print("No GPU acceleration available, using CPU")
+
+    # Refresh and enable all available devices
     prefs.get_devices()
+    enabled_devices = []
     for device in prefs.devices:
         device.use = True
+        if device.type != 'CPU':
+            enabled_devices.append(f"{device.name} ({device.type})")
+
+    if enabled_devices:
+        print(f"Enabled GPU devices: {', '.join(enabled_devices)}")
+    else:
+        print("No GPU devices found, rendering will use CPU")
 
     scene.cycles.device = 'GPU'
     scene.cycles.samples = RENDER_SAMPLES
@@ -2381,12 +2602,13 @@ except Exception as e:
 print(f"Render: {RENDER_WIDTH}x{RENDER_HEIGHT}, {RENDER_SAMPLES} samples")
 
 # ============================================================================
-# SAVE SCENE FILE
+# SAVE SCENE FILE (for future cache use)
 # ============================================================================
 SCENE_FILE = os.path.join(os.path.dirname(OUTPUT_FILE), "rendered_scene.blend")
 try:
     bpy.ops.wm.save_as_mainfile(filepath=SCENE_FILE)
     print(f"Scene saved to: {SCENE_FILE}")
+    print("  (Future runs will load from cache unless --force-rebuild is used)")
 except Exception as e:
     print(f"Warning: Could not save scene file: {e}")
 
