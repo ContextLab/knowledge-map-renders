@@ -2427,13 +2427,13 @@ print("Dramatic lighting configured")
 # ============================================================================
 print("Setting up camera...")
 
-# Camera settings extracted from terrain_scene_edit.blend (user's manual edits)
-# Updated 2025-12-03 with latest camera position
-camera_location = (15.063646, 13.266693, 15.137848)  # Updated from terrain_scene_edit.blend
-target_location = (7.614984, 7.037800, 0.476730)
+# Camera settings extracted from camera_settings.blend (user's manual edits)
+# Updated 2025-12-04 with latest camera position
+camera_location = (16.819757, 13.143306, 12.880426)  # Updated from camera_settings.blend
+target_location = (6.894939, 7.541610, 0.720584)  # Updated from camera_settings.blend
 
-print(f"  Camera location (from new_camera_settings.blend): {camera_location}")
-print(f"  Target location (from new_camera_settings.blend): {target_location}")
+print(f"  Camera location (from camera_settings.blend): {camera_location}")
+print(f"  Target location (from camera_settings.blend): {target_location}")
 
 bpy.ops.object.camera_add(location=camera_location)
 camera = bpy.context.active_object
@@ -2449,18 +2449,18 @@ track_constraint.target = target_empty
 track_constraint.track_axis = 'TRACK_NEGATIVE_Z'
 track_constraint.up_axis = 'UP_Y'
 
-# Camera settings from terrain_scene_edit.blend (updated 2025-12-03)
-camera.data.lens = 36.0  # From terrain_scene_edit.blend
+# Camera settings from camera_settings.blend (updated 2025-12-04)
+camera.data.lens = 34.0  # From camera_settings.blend
 camera.data.clip_start = 0.01  # ~0.12 inches (very close)
-camera.data.clip_end = 83.33  # From terrain_scene_edit.blend
-camera.data.sensor_width = 23.0  # From terrain_scene_edit.blend
+camera.data.clip_end = 83.33  # From camera_settings.blend
+camera.data.sensor_width = 22.0  # From camera_settings.blend
 
-# Depth of field disabled per user request (from terrain_scene_edit.blend)
+# Depth of field disabled per user request (from camera_settings.blend)
 camera.data.dof.use_dof = False
-camera.data.dof.focus_distance = 10.0  # Updated from edited scene
-camera.data.dof.aperture_fstop = 0.5  # Kept for reference if DOF re-enabled
+camera.data.dof.focus_distance = 10.0  # From camera_settings.blend
+camera.data.dof.aperture_fstop = 0.5  # From camera_settings.blend
 
-print(f"Camera settings (from new_camera_settings.blend):")
+print(f"Camera settings (from camera_settings.blend):")
 print(f"  Focal length: {camera.data.lens}mm")
 print(f"  Focus distance: {camera.data.dof.focus_distance:.2f} feet")
 print(f"  Aperture: f/{camera.data.dof.aperture_fstop}")
