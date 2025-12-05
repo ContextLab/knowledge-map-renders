@@ -1,16 +1,16 @@
 # Knowledge Landscape 3D Visualization
 
-A Blender-based 3D visualization tool for rendering "knowledge landscapes" derived from educational data. Creates futuristic Tron/synthwave-style visualizations using Blender's Python API and Cycles ray tracing.
+A Blender-based 3D visualization tool for rendering "knowledge landscapes" derived from educational data. Creates [synthwave-style](https://en.wikipedia.org/wiki/Synthwave) visualizations using [Blender](https://www.blender.org/)'s Python API and Cycles ray tracing. Here's an example output:
 
 ![Knowledge Landscape Render](images/scene.png)
 
 ## Overview
 
-This project generates an artistic 3D rendering of Figure 8A (middle panel) from the paper, where:
-- **Terrain height** represents estimated knowledge
+This project generates an artistic 3D rendering of [Figure 8A (middle panel)](https://github.com/ContextLab/efficient-learning-khan/blob/master/paper/figs/knowledge_and_learning_maps.pdf) from the paper, where:
+- **Terrain height** represents average estimated knowledge (after Quiz 2)
 - **Trajectories** show content of two lectures (Lecture 1 and Lecture 2)
-- **Landmarks** show coordinates of questions (used to estimate knowledge)
-- **Grid** provides spatial reference with synthwave aesthetics
+- **Spheres** show coordinates of questions (used to estimate knowledge, tinted by question type)
+- **Mesh grid** provides spatial reference with synthwave aesthetics
 
 ## Quick Start
 
@@ -95,7 +95,7 @@ Key parameters in `scripts/blender_render.py`:
 
 ### Camera Settings
 
-The camera position and target can be adjusted using the minimal `data/camera_settings.blend` file, which contains the terrain mesh, trajectories, and landmarks with simple materials for fast viewport navigation.
+The camera position and target can be manually adjusted using the minimal `data/camera_settings.blend` file, which contains the terrain mesh, trajectories, and landmarks with simple materials for fast viewport navigation.
 
 ![Blender camera settings scene](images/blender_screenshot.png)
 
