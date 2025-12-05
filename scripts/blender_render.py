@@ -1633,11 +1633,11 @@ def create_glass_tube_road(coords, name, tube_radius, material, height_offset=10
 print("Creating neon tube trajectories...")
 
 # Highway - cyan neon tube (glass with glowing gas inside)
-highway_mat = create_neon_tube_material("HighwayNeon", SYNTHWAVE_CYAN, emission_strength=8.5)
+highway_mat = create_neon_tube_material("HighwayNeon", SYNTHWAVE_CYAN, emission_strength=7.0)
 highway = create_glass_tube_road(highway_coords, "Highway", ROAD_WIDTH/2, highway_mat, height_offset=HIGHWAY_HEIGHT_OFFSET)
 
 # Side road - magenta neon tube (glass with glowing gas inside)
-sideroad_mat = create_neon_tube_material("SideroadNeon", SYNTHWAVE_MAGENTA, emission_strength=8.5)
+sideroad_mat = create_neon_tube_material("SideroadNeon", SYNTHWAVE_MAGENTA, emission_strength=7.0)
 sideroad = create_glass_tube_road(sideroad_coords, "Sideroad", SIDEROAD_WIDTH/2, sideroad_mat, height_offset=SIDEROAD_HEIGHT_OFFSET)
 
 print("Neon tube trajectories created")
@@ -2429,8 +2429,8 @@ print("Setting up camera...")
 
 # Camera settings extracted from camera_settings.blend (user's manual edits)
 # Updated 2025-12-04 with latest camera position
-camera_location = (16.819757, 13.143306, 12.880426)  # Updated from camera_settings.blend
-target_location = (6.894939, 7.541610, 0.720584)  # Updated from camera_settings.blend
+camera_location = (17.412048, 13.900706, 15.414385)  # Updated from camera_settings.blend
+target_location = (7.604351, 7.944798, 0.414794)  # Updated from camera_settings.blend
 
 print(f"  Camera location (from camera_settings.blend): {camera_location}")
 print(f"  Target location (from camera_settings.blend): {target_location}")
@@ -2450,10 +2450,10 @@ track_constraint.track_axis = 'TRACK_NEGATIVE_Z'
 track_constraint.up_axis = 'UP_Y'
 
 # Camera settings from camera_settings.blend (updated 2025-12-04)
-camera.data.lens = 34.0  # From camera_settings.blend
+camera.data.lens = 33.0  # From camera_settings.blend
 camera.data.clip_start = 0.01  # ~0.12 inches (very close)
 camera.data.clip_end = 83.33  # From camera_settings.blend
-camera.data.sensor_width = 22.0  # From camera_settings.blend
+camera.data.sensor_width = 23.0  # From camera_settings.blend
 
 # Depth of field disabled per user request (from camera_settings.blend)
 camera.data.dof.use_dof = False
