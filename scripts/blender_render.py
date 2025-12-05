@@ -2342,64 +2342,106 @@ links.new(bg.outputs['Background'], output.inputs['Surface'])
 print("Synthwave sky configured")
 
 # ============================================================================
-# SET UP DRAMATIC LIGHTING
+# SET UP DRAMATIC LIGHTING (using emissive mesh planes - invisible to camera)
 # ============================================================================
 print("Setting up dramatic synthwave lighting...")
 
-# Calculate max visible height for lighting positions (scale with HEIGHT_SCALE)
-MAX_LIGHT_HEIGHT = HEIGHT_SCALE * 1.5  # Lights positioned relative to tall prisms
+# Emissive mesh planes cast light but can be made invisible to camera rays
+# This eliminates all reflections while maintaining directional colored lighting
 
-# Main cyan rim light from behind
-bpy.ops.object.light_add(type='AREA', location=(WORLD_SIZE/2, WORLD_SIZE * 1.2, MAX_LIGHT_HEIGHT))
-cyan_light = bpy.context.active_object
-cyan_light.name = "CyanRimLight"
-cyan_light.data.energy = 2000  # Scaled for scene with 1-100 inch prisms
-cyan_light.data.color = SYNTHWAVE_CYAN
-cyan_light.data.size = WORLD_SIZE * 0.5
-cyan_light.data.spread = math.radians(120)  # Soft edge falloff (max 180°)
-cyan_light.rotation_euler = (math.radians(60), 0, 0)
+def create_emissive_light_plane(name, location, rotation, size, color, strength):
+    """Create an emissive plane that lights the scene but is invisible to camera."""
+    # Create plane mesh
+    bpy.ops.mesh.primitive_plane_add(size=size, location=location, rotation=rotation)
+    plane = bpy.context.active_object
+    plane.name = name
 
-# Magenta key light from side
-bpy.ops.object.light_add(type='AREA', location=(WORLD_SIZE * -0.2, WORLD_SIZE/2, MAX_LIGHT_HEIGHT))
-magenta_light = bpy.context.active_object
-magenta_light.name = "MagentaKeyLight"
-magenta_light.data.energy = 1200  # Scaled for scene with 1-100 inch prisms
-magenta_light.data.color = SYNTHWAVE_MAGENTA
-magenta_light.data.size = WORLD_SIZE * 0.3
-magenta_light.data.spread = math.radians(120)  # Soft edge falloff
-magenta_light.rotation_euler = (math.radians(45), math.radians(-45), 0)
+    # Create emissive material
+    mat = bpy.data.materials.new(name=f"{name}_Material")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
 
-# Purple fill light from opposite side
-bpy.ops.object.light_add(type='AREA', location=(WORLD_SIZE * 1.2, WORLD_SIZE/2, MAX_LIGHT_HEIGHT * 0.7))
-purple_light = bpy.context.active_object
-purple_light.name = "PurpleFillLight"
-purple_light.data.energy = 800  # Scaled for scene with 1-100 inch prisms
-purple_light.data.color = SYNTHWAVE_PURPLE
-purple_light.data.size = WORLD_SIZE * 0.4
-purple_light.data.spread = math.radians(120)  # Soft edge falloff
-purple_light.rotation_euler = (math.radians(30), math.radians(45), 0)
+    # Emission shader
+    emission = nodes.new('ShaderNodeEmission')
+    emission.inputs['Color'].default_value = (*color, 1.0)
+    emission.inputs['Strength'].default_value = strength
+    emission.location = (0, 0)
 
-# Top down soft white light for overall visibility
-bpy.ops.object.light_add(type='AREA', location=(WORLD_SIZE/2, WORLD_SIZE/2, MAX_LIGHT_HEIGHT * 2))
-top_light = bpy.context.active_object
-top_light.name = "TopLight"
-top_light.data.energy = 400  # Scaled for scene with 1-100 inch prisms
-top_light.data.color = (0.9, 0.9, 1.0)
-top_light.data.size = WORLD_SIZE
-top_light.data.spread = math.radians(160)  # Very soft, diffuse lighting
-top_light.rotation_euler = (0, 0, 0)
+    # Output
+    output = nodes.new('ShaderNodeOutputMaterial')
+    output.location = (200, 0)
+    links.new(emission.outputs['Emission'], output.inputs['Surface'])
 
-# Point lights for accent on landscape features
-for i in range(3):
-    x = WORLD_SIZE * (0.3 + i * 0.2)
-    y = WORLD_SIZE * 0.5
-    bpy.ops.object.light_add(type='POINT', location=(x, y, MAX_LIGHT_HEIGHT * 0.4))
-    accent = bpy.context.active_object
-    accent.name = f"AccentLight_{i}"
-    accent.data.energy = 20  # Scaled for scene with 1-100 inch prisms
-    accent.data.color = [SYNTHWAVE_CYAN, SYNTHWAVE_MAGENTA, SYNTHWAVE_PINK][i]
+    plane.data.materials.append(mat)
 
-print("Dramatic lighting configured")
+    # Make invisible to camera but visible to other rays (diffuse, glossy, etc.)
+    # This is the key - light affects the scene but no reflections!
+    plane.visible_camera = False
+    plane.visible_diffuse = True
+    plane.visible_glossy = False  # No glossy reflections!
+    plane.visible_transmission = True
+    plane.visible_volume_scatter = True
+    plane.visible_shadow = False  # No shadows from the light plane itself
+
+    return plane
+
+# Light positioning - closer and more intense for drama
+LIGHT_DISTANCE = WORLD_SIZE * 1.2
+LIGHT_SIZE = WORLD_SIZE * 1.5  # Slightly smaller for more defined lighting
+
+# Main cyan rim light from behind - STRONG backlight for dramatic silhouettes
+create_emissive_light_plane(
+    "CyanLightPlane",
+    location=(WORLD_SIZE/2, WORLD_SIZE + LIGHT_DISTANCE * 0.5, LIGHT_DISTANCE * 0.3),
+    rotation=(math.radians(-45), 0, 0),  # Tilted toward scene
+    size=LIGHT_SIZE * 1.2,
+    color=SYNTHWAVE_CYAN,
+    strength=21.25  # Reduced 65% total
+)
+
+# Magenta key light from left side - primary colored illumination
+create_emissive_light_plane(
+    "MagentaLightPlane",
+    location=(-LIGHT_DISTANCE * 0.5, WORLD_SIZE/2, LIGHT_DISTANCE * 0.3),
+    rotation=(math.radians(-20), math.radians(50), 0),
+    size=LIGHT_SIZE,
+    color=SYNTHWAVE_MAGENTA,
+    strength=14.9  # Reduced 65% total
+)
+
+# Purple fill light from right side - cooler contrast
+create_emissive_light_plane(
+    "PurpleLightPlane",
+    location=(WORLD_SIZE + LIGHT_DISTANCE * 0.5, WORLD_SIZE/2, LIGHT_DISTANCE * 0.3),
+    rotation=(math.radians(-20), math.radians(-50), 0),
+    size=LIGHT_SIZE,
+    color=SYNTHWAVE_PURPLE,
+    strength=10.6  # Reduced 65% total
+)
+
+# Hot pink accent light from front-low angle for drama
+create_emissive_light_plane(
+    "PinkAccentPlane",
+    location=(WORLD_SIZE/2, -LIGHT_DISTANCE * 0.3, LIGHT_DISTANCE * 0.2),
+    rotation=(math.radians(30), 0, 0),  # Angled up into scene
+    size=LIGHT_SIZE * 0.8,
+    color=SYNTHWAVE_PINK,
+    strength=8.5  # Reduced 65% total
+)
+
+# Top down dark blue ambient fill (subtle)
+create_emissive_light_plane(
+    "TopLightPlane",
+    location=(WORLD_SIZE/2, WORLD_SIZE/2, LIGHT_DISTANCE * 0.8),
+    rotation=(0, 0, 0),  # Facing straight down
+    size=LIGHT_SIZE * 2.0,
+    color=(0.05, 0.1, 0.4),  # Deeper dark blue
+    strength=6.4  # Reduced 65% total
+)
+
+print("Dramatic lighting configured (5 emissive planes - cyan, magenta, purple, pink, dark blue)")
 
 # ============================================================================
 # SET UP CAMERA (reads settings from camera_settings.blend)
