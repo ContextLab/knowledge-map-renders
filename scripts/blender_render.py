@@ -22,6 +22,18 @@ import argparse
 import time
 from mathutils import Vector, Matrix
 
+# Add scripts directory to path for imports
+SCRIPT_DIR_INIT = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.getcwd()
+if SCRIPT_DIR_INIT not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR_INIT)
+
+# Import shared geometry module for consistent sizing
+from scene_geometry import (
+    CAMERA_SETTINGS_BLEND,
+    read_camera_settings_directly,
+    get_default_camera_settings,
+)
+
 
 # ============================================================================
 # ARGUMENT PARSING
@@ -221,7 +233,7 @@ args = parse_args()
 BLEND_OUTPUT = os.path.join(PROJECT_ROOT, "rendered_scene.blend")
 SCRIPT_PATH = os.path.abspath(__file__) if '__file__' in dir() else os.path.join(SCRIPT_DIR, 'blender_render.py')
 
-# List all data files to check for modifications
+# List all data files to check for modifications (including camera_settings.blend)
 DATA_FILES = [
     os.path.join(DATA_DIR, "knowledge-heatmap-quiz2.npy"),
     os.path.join(DATA_DIR, "lecture1-trajectory-shifted.npy"),
@@ -229,6 +241,7 @@ DATA_FILES = [
     os.path.join(DATA_DIR, "lecture1-questions-shifted.npy"),
     os.path.join(DATA_DIR, "lecture2-questions-shifted.npy"),
     os.path.join(DATA_DIR, "general-knowledge-questions-shifted.npy"),
+    CAMERA_SETTINGS_BLEND,  # Camera settings - rebuild if changed
 ]
 
 # Check if we should use cached scene
@@ -2423,17 +2436,55 @@ for i in range(3):
 print("Dramatic lighting configured")
 
 # ============================================================================
-# SET UP CAMERA
+# SET UP CAMERA (reads settings from camera_settings.blend)
 # ============================================================================
 print("Setting up camera...")
 
-# Camera settings extracted from camera_settings.blend (user's manual edits)
-# Updated 2025-12-04 with latest camera position
-camera_location = (17.412048, 13.900706, 15.414385)  # Updated from camera_settings.blend
-target_location = (7.604351, 7.944798, 0.414794)  # Updated from camera_settings.blend
+# Load camera settings dynamically from camera_settings.blend
+# This allows users to adjust camera in Blender GUI and have it automatically
+# reflected in renders without editing this script
+if os.path.exists(CAMERA_SETTINGS_BLEND):
+    print(f"  Loading camera settings from: {CAMERA_SETTINGS_BLEND}")
+    # We need to load the camera settings without disrupting our current scene
+    # Use a temporary approach: load the blend file data
+    camera_settings = {}
+    with bpy.data.libraries.load(CAMERA_SETTINGS_BLEND, link=False) as (data_from, data_to):
+        data_to.objects = [name for name in data_from.objects
+                          if 'Camera' in name or 'Target' in name]
 
-print(f"  Camera location (from camera_settings.blend): {camera_location}")
-print(f"  Target location (from camera_settings.blend): {target_location}")
+    # Extract settings from loaded objects
+    for obj in data_to.objects:
+        if obj is None:
+            continue
+        if obj.type == 'CAMERA':
+            camera_settings['camera_location'] = tuple(obj.location)
+            camera_settings['lens'] = obj.data.lens
+            camera_settings['sensor_width'] = obj.data.sensor_width
+            camera_settings['clip_start'] = obj.data.clip_start
+            camera_settings['clip_end'] = obj.data.clip_end
+            camera_settings['use_dof'] = obj.data.dof.use_dof
+            camera_settings['focus_distance'] = obj.data.dof.focus_distance
+            camera_settings['aperture_fstop'] = obj.data.dof.aperture_fstop
+            # Clean up loaded camera data
+            bpy.data.cameras.remove(obj.data)
+        elif obj.type == 'EMPTY' and 'Target' in obj.name:
+            camera_settings['target_location'] = tuple(obj.location)
+            # Clean up loaded empty
+            bpy.data.objects.remove(obj)
+
+    # Fall back to defaults if loading failed
+    if not camera_settings:
+        print("  Warning: Could not load camera settings, using defaults")
+        camera_settings = get_default_camera_settings()
+else:
+    print(f"  Warning: {CAMERA_SETTINGS_BLEND} not found, using defaults")
+    camera_settings = get_default_camera_settings()
+
+camera_location = camera_settings.get('camera_location', (17.412048, 13.900706, 15.414385))
+target_location = camera_settings.get('target_location', (7.604351, 7.944798, 0.414794))
+
+print(f"  Camera location: {camera_location}")
+print(f"  Target location: {target_location}")
 
 bpy.ops.object.camera_add(location=camera_location)
 camera = bpy.context.active_object
@@ -2449,19 +2500,20 @@ track_constraint.target = target_empty
 track_constraint.track_axis = 'TRACK_NEGATIVE_Z'
 track_constraint.up_axis = 'UP_Y'
 
-# Camera settings from camera_settings.blend (updated 2025-12-04)
-camera.data.lens = 33.0  # From camera_settings.blend
-camera.data.clip_start = 0.01  # ~0.12 inches (very close)
-camera.data.clip_end = 83.33  # From camera_settings.blend
-camera.data.sensor_width = 23.0  # From camera_settings.blend
+# Apply camera settings from camera_settings.blend
+camera.data.lens = camera_settings.get('lens', 33.0)
+camera.data.clip_start = camera_settings.get('clip_start', 0.01)
+camera.data.clip_end = camera_settings.get('clip_end', 83.33)
+camera.data.sensor_width = camera_settings.get('sensor_width', 23.0)
 
-# Depth of field disabled per user request (from camera_settings.blend)
-camera.data.dof.use_dof = False
-camera.data.dof.focus_distance = 10.0  # From camera_settings.blend
-camera.data.dof.aperture_fstop = 0.5  # From camera_settings.blend
+# Depth of field settings
+camera.data.dof.use_dof = camera_settings.get('use_dof', False)
+camera.data.dof.focus_distance = camera_settings.get('focus_distance', 10.0)
+camera.data.dof.aperture_fstop = camera_settings.get('aperture_fstop', 0.5)
 
 print(f"Camera settings (from camera_settings.blend):")
 print(f"  Focal length: {camera.data.lens}mm")
+print(f"  Sensor width: {camera.data.sensor_width}mm")
 print(f"  Focus distance: {camera.data.dof.focus_distance:.2f} feet")
 print(f"  Aperture: f/{camera.data.dof.aperture_fstop}")
 

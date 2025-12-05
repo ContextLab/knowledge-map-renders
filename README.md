@@ -15,8 +15,8 @@ This project generates an artistic 3D rendering of Figure 8A (middle panel) from
 ## Quick Start
 
 ### Prerequisites
-- macOS (Apple Silicon recommended)
-- [Conda](https://docs.conda.io/en/latest/miniconda.html) (Miniconda or Anaconda)
+- macOS (Apple Silicon recommended) or Ubuntu Linux
+- [Conda](https://docs.conda.io/en/latest/miniconda.html) (Miniconda or Anaconda) - optional
 
 ### Installation
 
@@ -32,12 +32,26 @@ cd knowledge-map-renders
 ### Rendering
 
 ```bash
-# Render the visualization
-/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/blender_render.py
+# Simple render (uses cached scene if available)
+./render.sh
+
+# Force rebuild from scratch
+./render.sh --force-rebuild
+
+# Custom output paths
+./render.sh -o my_render.png -b my_scene.blend
 ```
 
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--force-rebuild`, `-f` | Force rebuild scene (ignore cache) |
+| `--output`, `-o FILE` | Custom output PNG path |
+| `--blend`, `-b FILE` | Custom output .blend path |
+| `--help`, `-h` | Show help message |
+
 **Output files:**
-- `scene.png` - Rendered image (675x1200)
+- `scene.png` - Rendered image (1200x675)
 - `rendered_scene.blend` - Blender scene file for manual editing
 
 ## Project Structure
@@ -54,16 +68,15 @@ cd knowledge-map-renders
 │   └── camera_settings.blend            # Minimal Blender file for camera adjustment (terrain, trajectories, landmarks)
 ├── scripts/                 # Python scripts
 │   ├── blender_render.py    # Main rendering script (generates full scene)
+│   ├── scene_geometry.py    # Shared geometry module (sizing, coordinates, camera loading)
+│   ├── create_camera_settings.py     # Generate minimal camera_settings.blend file
+│   ├── extract_new_camera.py         # Extract camera params from camera_settings.blend
 │   ├── render_from_scene.py # Render from existing .blend file
 │   ├── update_and_render.py # Load scene, resize landmarks, re-render
-│   ├── render_3d_terrain.py # PyVista-based alternative (no Blender required)
-│   ├── extract_camera_settings.py    # Extract camera params from terrain_scene_edit.blend
-│   ├── extract_new_camera.py         # Extract camera params from camera_settings.blend
-│   ├── create_camera_settings.py     # Generate minimal camera_settings.blend file
-│   ├── extract_scene_settings.py     # Extract camera, target, and landmark settings
-│   └── extract_automotive_paint.py   # Inspect material node trees
+│   └── render_3d_terrain.py # PyVista-based alternative (no Blender required)
 ├── materials/               # Blender materials and textures
 ├── images/                  # Screenshots and example outputs
+├── render.sh                # Cross-platform render script (macOS + Linux)
 ├── setup.sh                 # Installation script
 ├── requirements.txt         # Python dependencies
 └── README.md
@@ -77,8 +90,8 @@ Key parameters in `scripts/blender_render.py`:
 |-----------|---------|-------------|
 | `DRAFT_MODE` | `False` | Use Workbench for quick preview |
 | `RENDER_SAMPLES` | `256` | Cycles samples (quality vs. speed) |
-| `RENDER_WIDTH` | `675` | Output image width |
-| `RENDER_HEIGHT` | `1200` | Output image height |
+| `RENDER_WIDTH` | `1200` | Output image width |
+| `RENDER_HEIGHT` | `675` | Output image height |
 
 ### Camera Settings
 
@@ -92,22 +105,21 @@ The camera position and target can be adjusted using the minimal `data/camera_se
 2. Select the `MainCamera` object and adjust its position, or move the `CameraTarget` empty to change where the camera looks
 3. Use **View → Cameras → Active Camera** (or press `Numpad 0`) to preview the camera view
 4. Save the file when satisfied with the camera position
+5. Run `./render.sh` - camera settings are automatically loaded from the .blend file
 
-**To extract updated camera settings:**
+Camera settings (location, target, lens, sensor width, DOF) are read directly from `camera_settings.blend` at render time, so changes take effect automatically without editing any Python code.
+
+**To view current camera settings:**
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/extract_new_camera.py
 ```
 
-This prints the camera location, target location, lens, and other parameters. Copy these values into `scripts/blender_render.py` (around line 2240) to use them in the final render.
-
-**To regenerate `camera_settings.blend`:**
+**To regenerate `camera_settings.blend` from defaults:**
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/create_camera_settings.py
 ```
-
-This recreates the minimal scene file from the current settings in `blender_render.py`.
 
 ## Citation
 

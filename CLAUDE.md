@@ -17,7 +17,7 @@ This project creates Tron/synthwave-style 3D "knowledge landscape" visualization
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/blender_render.py
 ```
-**Output:** `scene.png` (675x1200, 256 Cycles samples)
+**Output:** `scene.png` (1200x675, 256 Cycles samples)
 **Scene file:** `rendered_scene.blend` (for manual editing in Blender GUI)
 
 ### Quick draft preview
@@ -60,7 +60,7 @@ SCALE_FACTOR = PRISM_BASE_SIZE  # ~0.0833 feet per heightmap unit
 # Render settings
 DRAFT_MODE = False  # True for quick Workbench preview
 RENDER_SAMPLES = 256  # Cycles samples
-RENDER_WIDTH, RENDER_HEIGHT = 675, 1200
+RENDER_WIDTH, RENDER_HEIGHT = 1200, 675
 
 # Tractor beams (Mantaflow smoke)
 TRACTOR_BEAM_ENABLED = True

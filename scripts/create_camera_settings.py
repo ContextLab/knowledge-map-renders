@@ -8,59 +8,45 @@ Create a minimal camera_settings.blend file with:
 - Landmark spheres
 
 Uses simple solid color materials for visualization without adding much filesize.
+Uses shared geometry module for consistent sizing with blender_render.py.
 
 Run with: /Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/create_camera_settings.py
 """
 
 import bpy
 import bmesh
-import numpy as np
 import os
-from mathutils import Vector
+import sys
 
-# Get directories
+# Add scripts directory to path for imports
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.getcwd()
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+# Import shared geometry module
+from scene_geometry import (
+    # Paths
+    PROJECT_ROOT, DATA_DIR,
+    # Scale settings
+    WORLD_SIZE, SCALE_FACTOR, WORLD_OFFSET,
+    HEIGHT_SCALE_MIN, HEIGHT_SCALE,
+    # Parameters
+    SAMPLE_RATE, LANDMARK_RADIUS, LANDMARK_FLOAT_HEIGHT,
+    ROAD_WIDTH, SIDEROAD_WIDTH,
+    HIGHWAY_HEIGHT_OFFSET, SIDEROAD_HEIGHT_OFFSET,
+    RENDER_WIDTH, RENDER_HEIGHT,
+    # Colors
+    COLOR_TERRAIN, COLOR_HIGHWAY, COLOR_SIDEROAD,
+    COLOR_LECTURE1, COLOR_LECTURE2, COLOR_GENERAL,
+    # Functions
+    load_heightmap, extend_heightmap,
+    load_trajectories, load_landmarks,
+    get_terrain_height_at_index, get_height_at,
+    get_prism_size, get_prism_center,
+    get_default_camera_settings,
+)
+
 OUTPUT_FILE = os.path.join(DATA_DIR, "camera_settings.blend")
-
-# Scale settings (must match blender_render.py)
-PRISM_BASE_SIZE = 1.0 / 12.0  # 1 inch in feet
-SCALE_FACTOR = PRISM_BASE_SIZE
-HEIGHTMAP_SIZE = 100
-BASE_WORLD_SIZE = HEIGHTMAP_SIZE * SCALE_FACTOR
-WORLD_SIZE = BASE_WORLD_SIZE * 2  # Extended size (matches blender_render.py)
-WORLD_OFFSET = BASE_WORLD_SIZE / 2  # Used for coordinate transformation
-
-# Height scale settings
-HEIGHT_SCALE_MIN = 1.0 / 12.0
-HEIGHT_SCALE_MAX = 50.0 / 12.0
-HEIGHT_SCALE = HEIGHT_SCALE_MAX - HEIGHT_SCALE_MIN
-
-# Camera settings (from blender_render.py)
-CAMERA_LOCATION = (15.063646, 13.266693, 15.137848)
-TARGET_LOCATION = (7.614984, 7.037800, 0.476730)
-CAMERA_LENS = 36.0
-CAMERA_SENSOR_WIDTH = 23.0
-CAMERA_CLIP_START = 0.01  # ~0.12 inches (very close)
-CAMERA_CLIP_END = 83.33
-
-# Depth of field settings (from blender_render.py)
-DOF_ENABLED = False  # Disabled per user request
-DOF_FOCUS_DISTANCE = 10.0
-DOF_APERTURE_FSTOP = 0.5
-
-# Landmark settings
-LANDMARK_RADIUS = 0.175
-LANDMARK_FLOAT_HEIGHT = 1.5
-
-# Colors for simple materials
-COLOR_TERRAIN = (0.05, 0.02, 0.15, 1.0)  # Dark blue
-COLOR_HIGHWAY = (0.0, 0.9, 1.0, 1.0)      # Cyan
-COLOR_SIDEROAD = (1.0, 0.0, 0.8, 1.0)     # Magenta
-COLOR_LECTURE1 = (0.8, 0.8, 1.0, 1.0)     # Light blue
-COLOR_LECTURE2 = (0.6, 0.6, 0.8, 1.0)     # Gray blue
-COLOR_GENERAL = (0.3, 0.3, 0.5, 1.0)      # Dark gray blue
 
 print("=" * 60)
 print("Creating camera_settings.blend with terrain mesh")
@@ -80,42 +66,14 @@ for mesh in bpy.data.meshes:
 for curve in bpy.data.curves:
     bpy.data.curves.remove(curve)
 
-# Load data
+# Load data using shared functions
 print("Loading data...")
-heightmap = np.load(os.path.join(DATA_DIR, 'knowledge-heatmap-quiz2.npy'))
-highway_coords = np.load(os.path.join(DATA_DIR, 'lecture1-trajectory-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-sideroad_coords = np.load(os.path.join(DATA_DIR, 'lecture2-trajectory-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-lecture1_landmarks = np.load(os.path.join(DATA_DIR, 'lecture1-questions-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-lecture2_landmarks = np.load(os.path.join(DATA_DIR, 'lecture2-questions-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-general_landmarks = np.load(os.path.join(DATA_DIR, 'general-knowledge-questions-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
+heightmap_norm_original, _, _ = load_heightmap()
+heightmap_norm = extend_heightmap(heightmap_norm_original)
+highway_coords, sideroad_coords = load_trajectories()
+lecture1_landmarks, lecture2_landmarks, general_landmarks = load_landmarks()
 
-# Normalize heightmap
-h_min, h_max = heightmap.min(), heightmap.max()
-heightmap_norm = (heightmap - h_min) / (h_max - h_min)
-
-def get_terrain_height_at_index(ix, iy):
-    """Get terrain height at heightmap indices."""
-    if 0 <= ix < 100 and 0 <= iy < 100:
-        return HEIGHT_SCALE_MIN + heightmap_norm[ix, iy] * HEIGHT_SCALE
-    return HEIGHT_SCALE_MIN
-
-def get_terrain_height(x, y):
-    """Get interpolated terrain height at world coordinates."""
-    hx = (x - WORLD_OFFSET) / SCALE_FACTOR
-    hy = (y - WORLD_OFFSET) / SCALE_FACTOR
-    hx = max(0, min(99, hx))
-    hy = max(0, min(99, hy))
-    ix, iy = int(hx), int(hy)
-    ix = min(ix, 98)
-    iy = min(iy, 98)
-    fx, fy = hx - ix, hy - iy
-    h00 = heightmap_norm[ix, iy]
-    h10 = heightmap_norm[ix + 1, iy]
-    h01 = heightmap_norm[ix, iy + 1]
-    h11 = heightmap_norm[ix + 1, iy + 1]
-    h = (h00 * (1 - fx) * (1 - fy) + h10 * fx * (1 - fy) +
-         h01 * (1 - fx) * fy + h11 * fx * fy)
-    return HEIGHT_SCALE_MIN + h * HEIGHT_SCALE
+print(f"Heightmap shape: {heightmap_norm.shape}")
 
 def create_simple_material(name, color):
     """Create a simple solid color material."""
@@ -148,22 +106,19 @@ print("Creating terrain mesh (this may take a moment)...")
 mesh = bpy.data.meshes.new("TerrainMesh")
 bm = bmesh.new()
 
-# Create vertices and faces for each prism top (50x50 grid, sampling every 2nd point)
+# Create vertices and faces for each prism top (50x50 grid, sampling every SAMPLE_RATE points)
 # NOTE: Terrain positioning must match blender_render.py which uses (i / nx) * WORLD_SIZE
-GRID_STEP = 2  # Sample every 2nd point for 50x50 grid
-NX, NY = 100, 100  # Heightmap dimensions
+nx, ny = heightmap_norm.shape
 
-for ix in range(0, 100, GRID_STEP):
-    for iy in range(0, 100, GRID_STEP):
+for ix in range(0, nx, SAMPLE_RATE):
+    for iy in range(0, ny, SAMPLE_RATE):
         # World position - MUST match blender_render.py formula: (i / nx) * world_size
-        x = (ix / NX) * WORLD_SIZE
-        y = (iy / NY) * WORLD_SIZE
-        z = get_terrain_height_at_index(ix, iy)
+        x = (ix / nx) * WORLD_SIZE
+        y = (iy / ny) * WORLD_SIZE
+        z = get_terrain_height_at_index(ix, iy, heightmap_norm)
 
-        # Prism size matches blender_render.py: cell_world_size * sample_rate
-        cell_world_size = WORLD_SIZE / NX
-        prism_size = cell_world_size * GRID_STEP
-        half_size = prism_size / 2.0
+        # Prism size matches blender_render.py
+        cell_world_size, prism_size, half_size = get_prism_size(SAMPLE_RATE, nx)
 
         # Center of prism (matches blender_render.py: cx = x + half_size)
         cx = x + half_size
@@ -184,34 +139,37 @@ terrain_obj = bpy.data.objects.new("Terrain", mesh)
 bpy.context.collection.objects.link(terrain_obj)
 terrain_obj.data.materials.append(terrain_mat)
 
+# Get camera settings (use defaults since we're creating the file)
+camera_settings = get_default_camera_settings()
+
 # Create camera
 print("Creating camera...")
-bpy.ops.object.camera_add(location=CAMERA_LOCATION)
+bpy.ops.object.camera_add(location=camera_settings['camera_location'])
 camera = bpy.context.active_object
 camera.name = "MainCamera"
 
 # Lens settings
-camera.data.lens = CAMERA_LENS
-camera.data.sensor_width = CAMERA_SENSOR_WIDTH
-camera.data.clip_start = CAMERA_CLIP_START
-camera.data.clip_end = CAMERA_CLIP_END
+camera.data.lens = camera_settings['lens']
+camera.data.sensor_width = camera_settings['sensor_width']
+camera.data.clip_start = camera_settings['clip_start']
+camera.data.clip_end = camera_settings['clip_end']
 
-# Depth of field settings (matching blender_render.py)
-camera.data.dof.use_dof = DOF_ENABLED
-camera.data.dof.focus_distance = DOF_FOCUS_DISTANCE
-camera.data.dof.aperture_fstop = DOF_APERTURE_FSTOP
+# Depth of field settings
+camera.data.dof.use_dof = camera_settings['use_dof']
+camera.data.dof.focus_distance = camera_settings['focus_distance']
+camera.data.dof.aperture_fstop = camera_settings['aperture_fstop']
 
 bpy.context.scene.camera = camera
 
-print(f"  Lens: {CAMERA_LENS}mm")
-print(f"  Sensor width: {CAMERA_SENSOR_WIDTH}mm")
-print(f"  DOF enabled: {DOF_ENABLED}")
-print(f"  Focus distance: {DOF_FOCUS_DISTANCE}")
-print(f"  Aperture: f/{DOF_APERTURE_FSTOP}")
+print(f"  Lens: {camera_settings['lens']}mm")
+print(f"  Sensor width: {camera_settings['sensor_width']}mm")
+print(f"  DOF enabled: {camera_settings['use_dof']}")
+print(f"  Focus distance: {camera_settings['focus_distance']}")
+print(f"  Aperture: f/{camera_settings['aperture_fstop']}")
 
 # Create camera target
 print("Creating camera target...")
-bpy.ops.object.empty_add(type='PLAIN_AXES', location=TARGET_LOCATION)
+bpy.ops.object.empty_add(type='PLAIN_AXES', location=camera_settings['target_location'])
 target = bpy.context.active_object
 target.name = "CameraTarget"
 
@@ -236,7 +194,7 @@ def create_trajectory_curve(coords, name, material, height_offset=1.0):
     spline.points.add(len(coords) - 1)
 
     for i, (x, y) in enumerate(coords):
-        z = get_terrain_height(x, y) + height_offset
+        z = get_height_at(x, y, heightmap_norm) + height_offset
         spline.points[i].co = (x, y, z, 1.0)
 
     curve_obj = bpy.data.objects.new(name, curve_data)
@@ -244,8 +202,8 @@ def create_trajectory_curve(coords, name, material, height_offset=1.0):
     curve_obj.data.materials.append(material)
     return curve_obj
 
-highway_curve = create_trajectory_curve(highway_coords, "Highway_Trajectory", highway_mat)
-sideroad_curve = create_trajectory_curve(sideroad_coords, "Sideroad_Trajectory", sideroad_mat)
+highway_curve = create_trajectory_curve(highway_coords, "Highway_Trajectory", highway_mat, HIGHWAY_HEIGHT_OFFSET)
+sideroad_curve = create_trajectory_curve(sideroad_coords, "Sideroad_Trajectory", sideroad_mat, SIDEROAD_HEIGHT_OFFSET)
 
 # Create landmark spheres
 print("Creating landmark spheres...")
@@ -253,7 +211,7 @@ print("Creating landmark spheres...")
 def create_landmark_spheres(coords, prefix, material):
     """Create sphere meshes at landmark positions."""
     for i, (x, y) in enumerate(coords):
-        z = get_terrain_height(x, y) + LANDMARK_FLOAT_HEIGHT
+        z = get_height_at(x, y, heightmap_norm) + LANDMARK_FLOAT_HEIGHT
         bpy.ops.mesh.primitive_uv_sphere_add(
             radius=LANDMARK_RADIUS,
             segments=12,
@@ -278,8 +236,8 @@ sun.data.energy = 2.0
 # Set render settings
 print("Setting render settings...")
 scene = bpy.context.scene
-scene.render.resolution_x = 675
-scene.render.resolution_y = 1200
+scene.render.resolution_x = RENDER_WIDTH
+scene.render.resolution_y = RENDER_HEIGHT
 
 # Set viewport shading to material preview by default
 for area in bpy.context.screen.areas:
