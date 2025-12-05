@@ -102,7 +102,7 @@ The camera position and target can be adjusted using the minimal `data/camera_se
 **To adjust the camera:**
 
 1. Open `data/camera_settings.blend` in Blender
-2. Select the `MainCamera` object and adjust its position, or move the `CameraTarget` empty to change where the camera looks
+2. Select the `MainCamera` object and adjust its position or other properties, and move the `CameraTarget` to change where the camera looks
 3. Use **View → Cameras → Active Camera** (or press `Numpad 0`) to preview the camera view
 4. Save the file when satisfied with the camera position
 5. Run `./render.sh` - camera settings are automatically loaded from the .blend file
@@ -137,14 +137,13 @@ Fitzpatrick, P. C., Heusser, A. C., & Manning, J. R. (In press). Text embedding 
   author={Fitzpatrick, Paxton C. and Heusser, Andrew C. and Manning, Jeremy R.},
   journal={Nature Communications},
   year={2025},
-  note={In press},
-  url={https://psyarxiv.com/dh3q2}
+  note={In press}
 }
 ```
 
 ### Main Repository
 
-The main analysis code and data are available at:
+The main project's code and data are available at:
 https://github.com/ContextLab/efficient-learning-khan
 
 ```bibtex
