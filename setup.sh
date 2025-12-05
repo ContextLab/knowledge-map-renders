@@ -6,7 +6,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BLENDER_VERSION="4.2.0"
+BLENDER_VERSION="5.0.0"
 CONDA_ENV_NAME="knowledge-landscape"
 
 echo "=== Knowledge Landscape 3D Visualization Setup ==="
@@ -47,7 +47,7 @@ echo "Checking for Blender..."
 
 install_blender_macos() {
     BLENDER_DMG="blender-${BLENDER_VERSION}-macos-arm64.dmg"
-    BLENDER_URL="https://download.blender.org/release/Blender4.2/${BLENDER_DMG}"
+    BLENDER_URL="https://download.blender.org/release/Blender5.0/${BLENDER_DMG}"
 
     if [ -d "/Applications/Blender.app" ]; then
         BLENDER_INSTALLED_VERSION=$(/Applications/Blender.app/Contents/MacOS/Blender --version 2>/dev/null | head -1 | awk '{print $2}')
@@ -81,7 +81,7 @@ install_blender_macos() {
 
 install_blender_linux() {
     BLENDER_TARBALL="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-    BLENDER_URL="https://download.blender.org/release/Blender4.2/${BLENDER_TARBALL}"
+    BLENDER_URL="https://download.blender.org/release/Blender5.0/${BLENDER_TARBALL}"
     BLENDER_INSTALL_DIR="${HOME}/blender-${BLENDER_VERSION}"
 
     if [ -x "${BLENDER_INSTALL_DIR}/blender" ]; then
@@ -211,6 +211,6 @@ else
 fi
 echo ""
 echo "Output will be saved to:"
-echo "  - scene.png (rendered image)"
-echo "  - rendered_scene.blend (Blender scene file)"
+echo "  - images/scene.png (rendered image)"
+echo "  - data/rendered_scene.blend (Blender scene file)"
 echo ""

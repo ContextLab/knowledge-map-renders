@@ -3,11 +3,11 @@
 # render.sh - Cross-platform render script for Knowledge Landscape visualization
 #
 # Usage:
-#   ./render.sh                    # Render using cached scene if available
-#   ./render.sh --force-rebuild    # Force rebuild scene from scratch
-#   ./render.sh --output scene.png # Specify output PNG file
-#   ./render.sh --blend out.blend  # Specify output .blend file
-#   ./render.sh --help             # Show this help message
+#   ./render.sh                         # Build and render scene (default)
+#   ./render.sh -i scene.blend          # Render existing .blend file
+#   ./render.sh -o output.png           # Specify output PNG file
+#   ./render.sh -b out.blend            # Specify output .blend file
+#   ./render.sh --help                  # Show this help message
 #
 # Supports macOS (including Apple Silicon) and Ubuntu Linux.
 #
@@ -23,8 +23,12 @@ BLENDER_SCRIPT="${SCRIPT_DIR}/scripts/blender_render.py"
 # Default output paths
 OUTPUT_PNG=""
 OUTPUT_BLEND=""
-FORCE_REBUILD=""
+INPUT_BLEND=""
 EXTRA_ARGS=""
+
+# Default output locations (set by blender_render.py when building scene)
+DEFAULT_PNG="${SCRIPT_DIR}/images/scene.png"
+DEFAULT_BLEND="${SCRIPT_DIR}/data/rendered_scene.blend"
 
 # =============================================================================
 # Parse Arguments
@@ -35,17 +39,20 @@ Usage: $(basename "$0") [OPTIONS]
 
 Render the Knowledge Landscape 3D visualization using Blender.
 
+By default, rebuilds the scene from scratch using blender_render.py.
+Use --input to render an existing .blend file instead.
+
 Options:
-  --force-rebuild, -f    Force rebuild scene from scratch (ignore cache)
-  --output, -o FILE      Specify output PNG file (default: scene.png)
-  --blend, -b FILE       Specify output .blend file (default: rendered_scene.blend)
+  --input, -i FILE       Render existing .blend file (skip scene building)
+  --output, -o FILE      Specify output PNG file (default: images/scene.png)
+  --blend, -b FILE       Specify output .blend file (default: data/rendered_scene.blend)
   --help, -h             Show this help message
 
 Examples:
-  $(basename "$0")                              # Use cached scene if available
-  $(basename "$0") --force-rebuild              # Rebuild from scratch
+  $(basename "$0")                              # Build and render scene
   $(basename "$0") -o render.png -b scene.blend # Custom output paths
-  $(basename "$0") -f -o final.png              # Rebuild with custom PNG output
+  $(basename "$0") -i data/rendered_scene.blend # Render existing .blend file
+  $(basename "$0") -i scene.blend -o output.png # Render existing file with custom output
 
 Environment:
   BLENDER_PATH           Override Blender executable path
@@ -56,9 +63,9 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --force-rebuild|-f)
-            FORCE_REBUILD="--force-rebuild"
-            shift
+        --input|-i)
+            INPUT_BLEND="$2"
+            shift 2
             ;;
         --output|-o)
             OUTPUT_PNG="$2"
@@ -164,49 +171,78 @@ echo "=============================================="
 echo "Knowledge Landscape Renderer"
 echo "=============================================="
 echo "Blender:    ${BLENDER}"
-echo "Script:     ${BLENDER_SCRIPT}"
-[[ -n "${FORCE_REBUILD}" ]] && echo "Mode:       Force rebuild"
+
+if [[ -n "${INPUT_BLEND}" ]]; then
+    # Render existing .blend file
+    if [[ ! -f "${INPUT_BLEND}" ]]; then
+        echo "Error: Input file not found: ${INPUT_BLEND}" >&2
+        exit 1
+    fi
+    echo "Mode:       Render existing .blend file"
+    echo "Input:      ${INPUT_BLEND}"
+else
+    # Build scene from scratch (default)
+    echo "Script:     ${BLENDER_SCRIPT}"
+    echo "Mode:       Build and render scene"
+fi
+
 [[ -n "${OUTPUT_PNG}" ]] && echo "Output PNG: ${OUTPUT_PNG}"
 [[ -n "${OUTPUT_BLEND}" ]] && echo "Output blend: ${OUTPUT_BLEND}"
 echo "=============================================="
 echo ""
 
-# Build Blender command
-BLENDER_CMD=("${BLENDER}" "--background" "--python" "${BLENDER_SCRIPT}")
-
-# Add arguments after -- separator for Python script
-if [[ -n "${FORCE_REBUILD}" ]]; then
-    BLENDER_CMD+=("--" "${FORCE_REBUILD}")
-fi
-
 # =============================================================================
 # Run Render
 # =============================================================================
-echo "Starting render..."
-echo "Command: ${BLENDER_CMD[*]}"
-echo ""
-
 START_TIME=$(date +%s)
 
-"${BLENDER_CMD[@]}"
+if [[ -n "${INPUT_BLEND}" ]]; then
+    # Render existing .blend file
+    echo "Rendering existing .blend file..."
+
+    # Determine output path for render
+    RENDER_OUTPUT="${OUTPUT_PNG:-${DEFAULT_PNG}}"
+    RENDER_OUTPUT_BASE="${RENDER_OUTPUT%.png}"
+
+    echo "Command: ${BLENDER} --background ${INPUT_BLEND} --render-output ${RENDER_OUTPUT_BASE} --render-frame 1"
+    echo ""
+
+    "${BLENDER}" --background "${INPUT_BLEND}" --render-output "${RENDER_OUTPUT_BASE}" --render-frame 1
+
+    # Blender adds frame number to output, rename if needed
+    if [[ -f "${RENDER_OUTPUT_BASE}0001.png" ]]; then
+        mv "${RENDER_OUTPUT_BASE}0001.png" "${RENDER_OUTPUT}"
+    fi
+else
+    # Build and render scene (default)
+    echo "Building and rendering scene..."
+    BLENDER_CMD=("${BLENDER}" "--background" "--python" "${BLENDER_SCRIPT}")
+    echo "Command: ${BLENDER_CMD[*]}"
+    echo ""
+
+    "${BLENDER_CMD[@]}"
+fi
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 
 # =============================================================================
-# Handle Custom Output Paths
+# Handle Custom Output Paths (only when building scene, not when using input)
 # =============================================================================
-if [[ -n "${OUTPUT_PNG}" && "${OUTPUT_PNG}" != "scene.png" ]]; then
-    if [[ -f "${SCRIPT_DIR}/scene.png" ]]; then
-        echo "Moving output to: ${OUTPUT_PNG}"
-        mv "${SCRIPT_DIR}/scene.png" "${OUTPUT_PNG}"
+if [[ -z "${INPUT_BLEND}" ]]; then
+    # Only move files if we built the scene (not rendered existing .blend)
+    if [[ -n "${OUTPUT_PNG}" && "${OUTPUT_PNG}" != "${DEFAULT_PNG}" ]]; then
+        if [[ -f "${DEFAULT_PNG}" ]]; then
+            echo "Moving output to: ${OUTPUT_PNG}"
+            mv "${DEFAULT_PNG}" "${OUTPUT_PNG}"
+        fi
     fi
-fi
 
-if [[ -n "${OUTPUT_BLEND}" && "${OUTPUT_BLEND}" != "rendered_scene.blend" ]]; then
-    if [[ -f "${SCRIPT_DIR}/rendered_scene.blend" ]]; then
-        echo "Moving .blend file to: ${OUTPUT_BLEND}"
-        mv "${SCRIPT_DIR}/rendered_scene.blend" "${OUTPUT_BLEND}"
+    if [[ -n "${OUTPUT_BLEND}" && "${OUTPUT_BLEND}" != "${DEFAULT_BLEND}" ]]; then
+        if [[ -f "${DEFAULT_BLEND}" ]]; then
+            echo "Moving .blend file to: ${OUTPUT_BLEND}"
+            mv "${DEFAULT_BLEND}" "${OUTPUT_BLEND}"
+        fi
     fi
 fi
 
@@ -219,16 +255,23 @@ echo "Render Complete!"
 echo "=============================================="
 echo "Time elapsed: ${ELAPSED} seconds"
 
-if [[ -n "${OUTPUT_PNG}" ]]; then
-    echo "Output PNG:   ${OUTPUT_PNG}"
+if [[ -n "${INPUT_BLEND}" ]]; then
+    # Rendered existing .blend file
+    echo "Input:        ${INPUT_BLEND}"
+    echo "Output PNG:   ${OUTPUT_PNG:-${DEFAULT_PNG}}"
 else
-    echo "Output PNG:   ${SCRIPT_DIR}/scene.png"
-fi
+    # Built and rendered scene
+    if [[ -n "${OUTPUT_PNG}" ]]; then
+        echo "Output PNG:   ${OUTPUT_PNG}"
+    else
+        echo "Output PNG:   ${DEFAULT_PNG}"
+    fi
 
-if [[ -n "${OUTPUT_BLEND}" ]]; then
-    echo "Output blend: ${OUTPUT_BLEND}"
-else
-    echo "Output blend: ${SCRIPT_DIR}/rendered_scene.blend"
+    if [[ -n "${OUTPUT_BLEND}" ]]; then
+        echo "Output blend: ${OUTPUT_BLEND}"
+    else
+        echo "Output blend: ${DEFAULT_BLEND}"
+    fi
 fi
 
 echo "=============================================="

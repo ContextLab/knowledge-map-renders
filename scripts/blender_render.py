@@ -40,6 +40,23 @@ from scene_geometry import (
 
 
 # ============================================================================
+# BLENDER VERSION COMPATIBILITY
+# ============================================================================
+# Blender 5.0 deprecated use_nodes (always True, removed in 6.0)
+# This helper safely enables nodes for older versions while avoiding warnings
+def _enable_nodes(data_block):
+    """Enable nodes for Material/World/Scene, suppressing deprecation warnings.
+
+    In Blender 5.0+, materials/worlds automatically use nodes, so this is a no-op.
+    For older versions, it sets use_nodes = True.
+    """
+    # In Blender 5.0+, use_nodes always returns True and has no effect
+    # We check the Blender version to avoid the deprecation warning
+    if bpy.app.version < (5, 0, 0):
+        data_block.use_nodes = True
+
+
+# ============================================================================
 # ARGUMENT PARSING
 # ============================================================================
 def parse_args():
@@ -105,7 +122,8 @@ print(f"Data directory: {DATA_DIR}")
 # ============================================================================
 # CONFIGURATION - Futuristic Tron/Synthwave Style
 # ============================================================================
-OUTPUT_FILE = os.path.join(PROJECT_ROOT, "scene.png")
+OUTPUT_FILE = os.path.join(PROJECT_ROOT, "images", "scene.png")
+SCENE_OUTPUT_FILE = os.path.join(DATA_DIR, "rendered_scene.blend")
 MATERIALS_DIR = os.path.join(PROJECT_ROOT, "materials")
 THIN_FILM_BLEND = os.path.join(MATERIALS_DIR, "thin-film.blend")
 AUTOMOTIVE_PAINT_BLEND = os.path.join(MATERIALS_DIR, "automotive-paint.blend")
@@ -431,7 +449,7 @@ def create_height_colored_material(name, height_value):
     color = synthwave_colormap(height_value)
 
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -500,7 +518,7 @@ def create_height_colored_material(name, height_value):
 def create_synthwave_emission_material(name, color, emission_strength=5.0, roughness=0.1):
     """Create a glowing synthwave material"""
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -523,7 +541,7 @@ def create_synthwave_emission_material(name, color, emission_strength=5.0, rough
 def create_glass_tube_material(name, color, emission_strength=2.0):
     """Create glowing glass tube material for roads"""
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -640,7 +658,7 @@ def create_growing_plasma_material(name, glow_color, emission_strength=20.0):  #
         return create_glass_tube_material(name, glow_color, emission_strength=3.0)
 
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -693,7 +711,7 @@ def create_uniform_dark_blue_material(name):
     dark_blue = (0.02, 0.05, 0.15)  # Very dark blue with slight hint of color
 
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -759,7 +777,7 @@ def create_neon_tube_material(name, glow_color, emission_strength=20.0):
     emanate from within the tube.
     """
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -805,7 +823,7 @@ def create_tron_wireframe_material(name, edge_color, emission_strength=3.0):
     """Create a glowing wireframe edge material for Tron-style edge highlighting.
     Uses Wireframe node to only render edges with glow effect."""
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -851,7 +869,7 @@ def create_acrylic_glass_material(name, glass_color, is_clear=False):
         is_clear: If True, uses very light gray for clear/neutral appearance
     """
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -931,7 +949,7 @@ def create_pbr_metal_material(name, texture_set_name, uv_scale=10.0):
     textures = METAL_TEXTURE_SETS[texture_set_name]
 
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -1140,7 +1158,7 @@ print("Creating explicit Tron wireframe grid...")
 def create_wireframe_edge_material(name, edge_color, emission_strength=50.0):
     """Create a brightly glowing emission material for wireframe edges."""
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -1420,7 +1438,7 @@ print("Creating base platform...")
 
 # Dark reflective base
 base_mat = bpy.data.materials.new(name="BaseMaterial")
-base_mat.use_nodes = True
+_enable_nodes(base_mat)
 nodes = base_mat.node_tree.nodes
 links = base_mat.node_tree.links
 nodes.clear()
@@ -1607,11 +1625,11 @@ def create_glass_tube_road(coords, name, tube_radius, material, height_offset=10
 print("Creating neon tube trajectories...")
 
 # Highway - cyan neon tube (glass with glowing gas inside)
-highway_mat = create_neon_tube_material("HighwayNeon", SYNTHWAVE_CYAN, emission_strength=7.0)
+highway_mat = create_neon_tube_material("HighwayNeon", SYNTHWAVE_CYAN, emission_strength=6.0)
 highway = create_glass_tube_road(highway_coords, "Highway", ROAD_WIDTH/2, highway_mat, height_offset=HIGHWAY_HEIGHT_OFFSET)
 
 # Side road - magenta neon tube (glass with glowing gas inside)
-sideroad_mat = create_neon_tube_material("SideroadNeon", SYNTHWAVE_MAGENTA, emission_strength=7.0)
+sideroad_mat = create_neon_tube_material("SideroadNeon", SYNTHWAVE_MAGENTA, emission_strength=6.0)
 sideroad = create_glass_tube_road(sideroad_coords, "Sideroad", SIDEROAD_WIDTH/2, sideroad_mat, height_offset=SIDEROAD_HEIGHT_OFFSET)
 
 print("Neon tube trajectories created")
@@ -1988,7 +2006,7 @@ def create_tractor_beam_volume_material(name, beam_color, is_push_effect, densit
         bpy.types.Material: The volumetric material
     """
     mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -2307,7 +2325,7 @@ print("Setting up synthwave environment...")
 
 world = bpy.data.worlds.new("World")
 bpy.context.scene.world = world
-world.use_nodes = True
+_enable_nodes(world)
 nodes = world.node_tree.nodes
 links = world.node_tree.links
 nodes.clear()
@@ -2358,7 +2376,7 @@ def create_emissive_light_plane(name, location, rotation, size, color, strength)
 
     # Create emissive material
     mat = bpy.data.materials.new(name=f"{name}_Material")
-    mat.use_nodes = True
+    _enable_nodes(mat)
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     nodes.clear()
@@ -2398,7 +2416,7 @@ create_emissive_light_plane(
     rotation=(math.radians(-45), 0, 0),  # Tilted toward scene
     size=LIGHT_SIZE * 1.2,
     color=SYNTHWAVE_CYAN,
-    strength=21.25  # Reduced 65% total
+    strength=18.0
 )
 
 # Magenta key light from left side - primary colored illumination
@@ -2408,7 +2426,7 @@ create_emissive_light_plane(
     rotation=(math.radians(-20), math.radians(50), 0),
     size=LIGHT_SIZE,
     color=SYNTHWAVE_MAGENTA,
-    strength=14.9  # Reduced 65% total
+    strength=13.5
 )
 
 # Purple fill light from right side - cooler contrast
@@ -2418,7 +2436,7 @@ create_emissive_light_plane(
     rotation=(math.radians(-20), math.radians(-50), 0),
     size=LIGHT_SIZE,
     color=SYNTHWAVE_PURPLE,
-    strength=10.6  # Reduced 65% total
+    strength=9.0
 )
 
 # Hot pink accent light from front-low angle for drama
@@ -2428,7 +2446,7 @@ create_emissive_light_plane(
     rotation=(math.radians(30), 0, 0),  # Angled up into scene
     size=LIGHT_SIZE * 0.8,
     color=SYNTHWAVE_PINK,
-    strength=8.5  # Reduced 65% total
+    strength=6.5
 )
 
 # Top down dark blue ambient fill (subtle)
@@ -2438,7 +2456,7 @@ create_emissive_light_plane(
     rotation=(0, 0, 0),  # Facing straight down
     size=LIGHT_SIZE * 2.0,
     color=(0.05, 0.1, 0.4),  # Deeper dark blue
-    strength=6.4  # Reduced 65% total
+    strength=3.0
 )
 
 print("Dramatic lighting configured (5 emissive planes - cyan, magenta, purple, pink, dark blue)")
@@ -2629,7 +2647,7 @@ try:
         tree = scene.compositing_node_group
     else:
         if hasattr(scene, 'use_nodes'):
-            scene.use_nodes = True
+            _enable_nodes(scene)
         tree = getattr(scene, 'node_tree', None)
 
     if tree:
@@ -2645,30 +2663,87 @@ try:
         # Glare for bloom effect
         glare = nodes.new('CompositorNodeGlare')
         glare.location = (300, 0)
-        try:
+
+        # Blender 5.0 uses input sockets for glare properties
+        # Set glare type via Type input (Fog Glow for bloom)
+        if 'Type' in glare.inputs:
+            # Blender 5.0 uses 'Fog Glow', older versions use 'FOG_GLOW'
+            try:
+                glare.inputs['Type'].default_value = 'Fog Glow'
+            except TypeError:
+                glare.inputs['Type'].default_value = 'FOG_GLOW'
+        elif hasattr(glare, 'glare_type'):
             glare.glare_type = 'FOG_GLOW'
-        except:
-            pass  # Attribute may not exist in all versions
-        glare.quality = 'HIGH'
-        glare.mix = -0.9  # Strong bloom
-        glare.threshold = 0.5
-        glare.size = 9
+
+        # Quality setting
+        if 'Quality' in glare.inputs:
+            # Blender 5.0 uses 'High', older versions use 'HIGH'
+            try:
+                glare.inputs['Quality'].default_value = 'High'
+            except TypeError:
+                glare.inputs['Quality'].default_value = 'HIGH'
+        elif hasattr(glare, 'quality'):
+            glare.quality = 'HIGH'
+
+        # Threshold and size
+        if 'Threshold' in glare.inputs:
+            glare.inputs['Threshold'].default_value = 0.5
+        elif hasattr(glare, 'threshold'):
+            glare.threshold = 0.5
+
+        if 'Size' in glare.inputs:
+            glare.inputs['Size'].default_value = 0.7  # 0-1 range in Blender 5.0
+        elif hasattr(glare, 'size'):
+            glare.size = 9
+
+        # Strength (replaces mix in Blender 5.0)
+        if 'Strength' in glare.inputs:
+            glare.inputs['Strength'].default_value = 0.5  # Moderate bloom
 
         # Color correction for synthwave look
         color_balance = nodes.new('CompositorNodeColorBalance')
         color_balance.location = (500, 0)
-        color_balance.correction_method = 'LIFT_GAMMA_GAIN'
-        # Add subtle purple tint to shadows
-        color_balance.lift = (0.95, 0.9, 1.0)
-        # Boost midtones slightly cyan
-        color_balance.gamma = (0.95, 1.0, 1.05)
 
-        composite = nodes.new('CompositorNodeComposite')
-        composite.location = (800, 0)
+        # Blender 5.0 uses input sockets for color balance properties
+        if 'Type' in color_balance.inputs:
+            # Blender 5.0: use input sockets
+            try:
+                color_balance.inputs['Type'].default_value = 'Lift/Gamma/Gain'
+            except TypeError:
+                pass  # Already default
+
+            # Find the RGBA Lift input (there are VALUE and RGBA versions)
+            for inp in color_balance.inputs:
+                if inp.name == 'Lift' and inp.type == 'RGBA':
+                    inp.default_value = (0.95, 0.9, 1.0, 1.0)  # Purple tint to shadows
+                    break
+
+            # Find the RGBA Gamma input
+            for inp in color_balance.inputs:
+                if inp.name == 'Gamma' and inp.type == 'RGBA':
+                    inp.default_value = (0.95, 1.0, 1.05, 1.0)  # Cyan boost to midtones
+                    break
+        elif hasattr(color_balance, 'correction_method'):
+            # Older Blender: use properties directly
+            color_balance.correction_method = 'LIFT_GAMMA_GAIN'
+            color_balance.lift = (0.95, 0.9, 1.0)
+            color_balance.gamma = (0.95, 1.0, 1.05)
+
+        # Output node - Blender 5.0 uses NodeGroupOutput instead of CompositorNodeComposite
+        try:
+            composite = nodes.new('CompositorNodeComposite')
+            composite.location = (800, 0)
+        except RuntimeError:
+            # Blender 5.0: use NodeGroupOutput and create socket on tree level
+            composite = nodes.new('NodeGroupOutput')
+            composite.location = (800, 0)
+            # Must create output socket on tree level first
+            if hasattr(tree, 'interface'):
+                tree.interface.new_socket(name="Image", in_out='OUTPUT', socket_type='NodeSocketColor')
 
         links.new(render_layers.outputs['Image'], glare.inputs['Image'])
         links.new(glare.outputs['Image'], color_balance.inputs['Image'])
-        links.new(color_balance.outputs['Image'], composite.inputs['Image'])
+        links.new(color_balance.outputs['Image'], composite.inputs[0])
         print("Compositing with bloom configured")
 except Exception as e:
     print(f"Warning: Could not set up compositing: {e}")
@@ -2678,11 +2753,16 @@ print(f"Render: {final_render_width}x{final_render_height}, {RENDER_SAMPLES} sam
 # ============================================================================
 # SAVE SCENE FILE (for future cache use)
 # ============================================================================
-SCENE_FILE = os.path.join(os.path.dirname(OUTPUT_FILE), "rendered_scene.blend")
 try:
-    bpy.ops.wm.save_as_mainfile(filepath=SCENE_FILE)
-    print(f"Scene saved to: {SCENE_FILE}")
+    bpy.ops.wm.save_as_mainfile(filepath=SCENE_OUTPUT_FILE)
+    print(f"Scene saved to: {SCENE_OUTPUT_FILE}")
     print("  (Future runs will load from cache unless --force-rebuild is used)")
+
+    # Remove .blend1 backup file if it exists
+    blend1_file = SCENE_OUTPUT_FILE + "1"
+    if os.path.exists(blend1_file):
+        os.remove(blend1_file)
+        print(f"  Removed backup file: {blend1_file}")
 except Exception as e:
     print(f"Warning: Could not save scene file: {e}")
 

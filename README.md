@@ -32,11 +32,11 @@ cd knowledge-map-renders
 ### Rendering
 
 ```bash
-# Simple render (uses cached scene if available)
+# Build and render scene (default)
 ./render.sh
 
-# Force rebuild from scratch
-./render.sh --force-rebuild
+# Render an existing .blend file
+./render.sh -i data/rendered_scene.blend
 
 # Custom output paths
 ./render.sh -o my_render.png -b my_scene.blend
@@ -45,14 +45,14 @@ cd knowledge-map-renders
 **Options:**
 | Flag | Description |
 |------|-------------|
-| `--force-rebuild`, `-f` | Force rebuild scene (ignore cache) |
+| `--input`, `-i FILE` | Render existing .blend file (skip scene building) |
 | `--output`, `-o FILE` | Custom output PNG path |
 | `--blend`, `-b FILE` | Custom output .blend path |
 | `--help`, `-h` | Show help message |
 
 **Output files:**
-- `scene.png` - Rendered image (1200x675)
-- `rendered_scene.blend` - Blender scene file for manual editing
+- `images/scene.png` - Rendered image (1200x675)
+- `data/rendered_scene.blend` - Blender scene file for manual editing
 
 ## Project Structure
 

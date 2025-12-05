@@ -250,6 +250,12 @@ for area in bpy.context.screen.areas:
 print(f"Saving to: {OUTPUT_FILE}")
 bpy.ops.wm.save_as_mainfile(filepath=OUTPUT_FILE)
 
+# Remove .blend1 backup file if it exists
+blend1_file = OUTPUT_FILE + "1"
+if os.path.exists(blend1_file):
+    os.remove(blend1_file)
+    print(f"Removed backup file: {blend1_file}")
+
 print("=" * 60)
 print("Done! Created camera_settings.blend with terrain mesh")
 print("=" * 60)
