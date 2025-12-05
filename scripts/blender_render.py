@@ -736,24 +736,23 @@ def create_uniform_dark_blue_material(name):
         group_node.node_tree = auto_paint_group
         group_node.location = (0, 0)
 
-        # Set uniform dark blue color
+        # Set uniform dark blue color - close to original automotive paint but with diffuse reflections
         group_node.inputs['Base Coat Color'].default_value = (*dark_blue, 1)
-        group_node.inputs['Base Coat Roughness'].default_value = 0.5
+        group_node.inputs['Base Coat Roughness'].default_value = 0.5  # Original value
         group_node.inputs['Base Coat IOR'].default_value = 1.5
 
         # Metallic flakes - white flakes for sparkle effect
-        # Using scale from example material in automotive-paint-shader.blend (50000.0)
         group_node.inputs['Enable Flakes'].default_value = True
-        group_node.inputs['Metallic Flakes Color'].default_value = (1.0, 1.0, 1.0, 1.0)  # White flakes
+        group_node.inputs['Metallic Flakes Color'].default_value = (1.0, 1.0, 1.0, 1.0)
         group_node.inputs['Metallic Flakes Density'].default_value = 0.5
         group_node.inputs['Metallic Flakes Roughness'].default_value = 0.2
-        group_node.inputs['Metallic Flakes Scale'].default_value = 50000.0  # Updated to match example material
+        group_node.inputs['Metallic Flakes Scale'].default_value = 50000.0
         group_node.inputs['Metallic Flakes Normal Randomization'].default_value = 1.0
 
-        # Clear coat settings
-        group_node.inputs['Coat Weight'].default_value = 1.0
-        group_node.inputs['Coat Roughness'].default_value = 0.02
-        group_node.inputs['Coat IOR'].default_value = 1.6
+        # Clear coat settings - original automotive paint values
+        group_node.inputs['Coat Weight'].default_value = 1.0  # Full coat
+        group_node.inputs['Coat Roughness'].default_value = 0.02  # Original value
+        group_node.inputs['Coat IOR'].default_value = 1.5
         # Subtle tint on clear coat
         group_node.inputs['Coat Tint'].default_value = (*dark_blue, 1)
 
@@ -764,15 +763,15 @@ def create_uniform_dark_blue_material(name):
 
         links.new(group_node.outputs['Shader'], output.inputs['Surface'])
     else:
-        # Fallback to Principled BSDF if node group not found
+        # Fallback to Principled BSDF if node group not found - more matte
         print(f"  Warning: Automotive Paint Shader node group not found, using fallback")
         principled = nodes.new('ShaderNodeBsdfPrincipled')
         principled.location = (0, 0)
         principled.inputs['Base Color'].default_value = (*dark_blue, 1)
-        principled.inputs['Roughness'].default_value = 0.15
-        principled.inputs['Metallic'].default_value = 0.9
-        principled.inputs['Coat Weight'].default_value = 1.0
-        principled.inputs['Coat Roughness'].default_value = 0.02
+        principled.inputs['Roughness'].default_value = 0.7  # More matte (was 0.15)
+        principled.inputs['Metallic'].default_value = 0.3  # Less metallic (was 0.9)
+        principled.inputs['Coat Weight'].default_value = 0.3  # Reduced (was 1.0)
+        principled.inputs['Coat Roughness'].default_value = 0.4  # Rougher (was 0.02)
         links.new(principled.outputs['BSDF'], output.inputs['Surface'])
 
     return mat
@@ -1634,11 +1633,11 @@ def create_glass_tube_road(coords, name, tube_radius, material, height_offset=10
 print("Creating neon tube trajectories...")
 
 # Highway - cyan neon tube (glass with glowing gas inside)
-highway_mat = create_neon_tube_material("HighwayNeon", SYNTHWAVE_CYAN, emission_strength=25.0)
+highway_mat = create_neon_tube_material("HighwayNeon", SYNTHWAVE_CYAN, emission_strength=8.5)
 highway = create_glass_tube_road(highway_coords, "Highway", ROAD_WIDTH/2, highway_mat, height_offset=HIGHWAY_HEIGHT_OFFSET)
 
 # Side road - magenta neon tube (glass with glowing gas inside)
-sideroad_mat = create_neon_tube_material("SideroadNeon", SYNTHWAVE_MAGENTA, emission_strength=25.0)
+sideroad_mat = create_neon_tube_material("SideroadNeon", SYNTHWAVE_MAGENTA, emission_strength=8.5)
 sideroad = create_glass_tube_road(sideroad_coords, "Sideroad", SIDEROAD_WIDTH/2, sideroad_mat, height_offset=SIDEROAD_HEIGHT_OFFSET)
 
 print("Neon tube trajectories created")

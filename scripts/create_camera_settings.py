@@ -29,7 +29,8 @@ PRISM_BASE_SIZE = 1.0 / 12.0  # 1 inch in feet
 SCALE_FACTOR = PRISM_BASE_SIZE
 HEIGHTMAP_SIZE = 100
 BASE_WORLD_SIZE = HEIGHTMAP_SIZE * SCALE_FACTOR
-WORLD_OFFSET = BASE_WORLD_SIZE / 2
+WORLD_SIZE = BASE_WORLD_SIZE * 2  # Extended size (matches blender_render.py)
+WORLD_OFFSET = BASE_WORLD_SIZE / 2  # Used for coordinate transformation
 
 # Height scale settings
 HEIGHT_SCALE_MIN = 1.0 / 12.0
@@ -41,8 +42,13 @@ CAMERA_LOCATION = (15.063646, 13.266693, 15.137848)
 TARGET_LOCATION = (7.614984, 7.037800, 0.476730)
 CAMERA_LENS = 36.0
 CAMERA_SENSOR_WIDTH = 23.0
-CAMERA_CLIP_START = 0.1
+CAMERA_CLIP_START = 0.01  # ~0.12 inches (very close)
 CAMERA_CLIP_END = 83.33
+
+# Depth of field settings (from blender_render.py)
+DOF_ENABLED = False  # Disabled per user request
+DOF_FOCUS_DISTANCE = 10.0
+DOF_APERTURE_FSTOP = 0.5
 
 # Landmark settings
 LANDMARK_RADIUS = 0.175
@@ -143,22 +149,30 @@ mesh = bpy.data.meshes.new("TerrainMesh")
 bm = bmesh.new()
 
 # Create vertices and faces for each prism top (50x50 grid, sampling every 2nd point)
+# NOTE: Terrain positioning must match blender_render.py which uses (i / nx) * WORLD_SIZE
 GRID_STEP = 2  # Sample every 2nd point for 50x50 grid
-vertices = {}
+NX, NY = 100, 100  # Heightmap dimensions
 
 for ix in range(0, 100, GRID_STEP):
     for iy in range(0, 100, GRID_STEP):
-        # World position
-        x = ix * SCALE_FACTOR + WORLD_OFFSET
-        y = iy * SCALE_FACTOR + WORLD_OFFSET
+        # World position - MUST match blender_render.py formula: (i / nx) * world_size
+        x = (ix / NX) * WORLD_SIZE
+        y = (iy / NY) * WORLD_SIZE
         z = get_terrain_height_at_index(ix, iy)
 
-        # Create 4 vertices for the prism top
-        half_size = PRISM_BASE_SIZE * GRID_STEP / 2
-        v1 = bm.verts.new((x - half_size, y - half_size, z))
-        v2 = bm.verts.new((x + half_size, y - half_size, z))
-        v3 = bm.verts.new((x + half_size, y + half_size, z))
-        v4 = bm.verts.new((x - half_size, y + half_size, z))
+        # Prism size matches blender_render.py: cell_world_size * sample_rate
+        cell_world_size = WORLD_SIZE / NX
+        prism_size = cell_world_size * GRID_STEP
+        half_size = prism_size / 2.0
+
+        # Center of prism (matches blender_render.py: cx = x + half_size)
+        cx = x + half_size
+        cy = y + half_size
+
+        v1 = bm.verts.new((cx - half_size, cy - half_size, z))
+        v2 = bm.verts.new((cx + half_size, cy - half_size, z))
+        v3 = bm.verts.new((cx + half_size, cy + half_size, z))
+        v4 = bm.verts.new((cx - half_size, cy + half_size, z))
 
         # Create face
         bm.faces.new([v1, v2, v3, v4])
@@ -175,12 +189,25 @@ print("Creating camera...")
 bpy.ops.object.camera_add(location=CAMERA_LOCATION)
 camera = bpy.context.active_object
 camera.name = "MainCamera"
+
+# Lens settings
 camera.data.lens = CAMERA_LENS
 camera.data.sensor_width = CAMERA_SENSOR_WIDTH
 camera.data.clip_start = CAMERA_CLIP_START
 camera.data.clip_end = CAMERA_CLIP_END
-camera.data.dof.use_dof = False
+
+# Depth of field settings (matching blender_render.py)
+camera.data.dof.use_dof = DOF_ENABLED
+camera.data.dof.focus_distance = DOF_FOCUS_DISTANCE
+camera.data.dof.aperture_fstop = DOF_APERTURE_FSTOP
+
 bpy.context.scene.camera = camera
+
+print(f"  Lens: {CAMERA_LENS}mm")
+print(f"  Sensor width: {CAMERA_SENSOR_WIDTH}mm")
+print(f"  DOF enabled: {DOF_ENABLED}")
+print(f"  Focus distance: {DOF_FOCUS_DISTANCE}")
+print(f"  Aperture: f/{DOF_APERTURE_FSTOP}")
 
 # Create camera target
 print("Creating camera target...")
