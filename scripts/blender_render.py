@@ -32,6 +32,10 @@ from scene_geometry import (
     CAMERA_SETTINGS_BLEND,
     read_camera_settings_directly,
     get_default_camera_settings,
+    load_heightmap,
+    extend_heightmap,
+    load_trajectories,
+    load_landmarks,
 )
 
 
@@ -146,8 +150,9 @@ METAL_TEXTURE_SETS = {
 DRAFT_MODE = False  # Set to False for final high-quality render
 
 # Full resolution for both modes (user requested same canvas size)
-RENDER_WIDTH = 675
-RENDER_HEIGHT = 1200
+# These defaults are overridden by camera_settings.blend if it exists
+RENDER_WIDTH = 1200
+RENDER_HEIGHT = 675
 
 if DRAFT_MODE:
     RENDER_SAMPLES = 1  # Not used for Workbench
@@ -291,62 +296,18 @@ for ng in bpy.data.node_groups:
     bpy.data.node_groups.remove(ng)
 
 # ============================================================================
-# LOAD DATA
+# LOAD DATA (using shared functions from scene_geometry.py)
 # ============================================================================
 print("Loading numpy data...")
-heightmap_original = np.load(os.path.join(DATA_DIR, 'knowledge-heatmap-quiz2.npy'))
+heightmap_norm_original, h_min, h_max = load_heightmap(DATA_DIR)
 
-# Scale coordinates from heightmap units (0-100) to world units (feet)
-highway_coords = np.load(os.path.join(DATA_DIR, 'lecture1-trajectory-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-sideroad_coords = np.load(os.path.join(DATA_DIR, 'lecture2-trajectory-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-lecture1_landmarks = np.load(os.path.join(DATA_DIR, 'lecture1-questions-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-lecture2_landmarks = np.load(os.path.join(DATA_DIR, 'lecture2-questions-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
-general_landmarks = np.load(os.path.join(DATA_DIR, 'general-knowledge-questions-shifted.npy')) * SCALE_FACTOR + WORLD_OFFSET
+# Load trajectories and landmarks (already scaled to world coordinates)
+highway_coords, sideroad_coords = load_trajectories(DATA_DIR)
+lecture1_landmarks, lecture2_landmarks, general_landmarks = load_landmarks(DATA_DIR)
 
-# Normalize original heightmap
-h_min, h_max = heightmap_original.min(), heightmap_original.max()
-heightmap_norm_original = (heightmap_original - h_min) / (h_max - h_min)
-
-# Extend heightmap
+# Extend heightmap with smooth falloff
 print("Extending heightmap...")
-nx_orig, ny_orig = heightmap_norm_original.shape
-nx_ext, ny_ext = nx_orig * 2, ny_orig * 2
-heightmap_norm = np.zeros((nx_ext, ny_ext))
-
-x_start, y_start = nx_orig // 2, ny_orig // 2
-heightmap_norm[x_start:x_start+nx_orig, y_start:y_start+ny_orig] = heightmap_norm_original
-
-avg_height = heightmap_norm_original.mean()
-
-for i in range(nx_ext):
-    for j in range(ny_ext):
-        orig_i = i - x_start
-        orig_j = j - y_start
-
-        if 0 <= orig_i < nx_orig and 0 <= orig_j < ny_orig:
-            continue
-
-        clamped_i = max(0, min(nx_orig - 1, orig_i))
-        clamped_j = max(0, min(ny_orig - 1, orig_j))
-        base_val = heightmap_norm_original[clamped_i, clamped_j]
-
-        dist_i = abs(orig_i - clamped_i)
-        dist_j = abs(orig_j - clamped_j)
-        total_dist = np.sqrt(dist_i**2 + dist_j**2)
-
-        fade_factor = np.exp(-total_dist / (nx_orig * 0.5))
-        heightmap_norm[i, j] = base_val * fade_factor + avg_height * (1 - fade_factor)
-
-def simple_blur(arr, kernel_size=5):
-    kernel = np.ones((kernel_size, kernel_size)) / (kernel_size * kernel_size)
-    padded = np.pad(arr, kernel_size // 2, mode='edge')
-    result = np.zeros_like(arr)
-    for i in range(arr.shape[0]):
-        for j in range(arr.shape[1]):
-            result[i, j] = np.sum(padded[i:i+kernel_size, j:j+kernel_size] * kernel)
-    return result
-
-heightmap_norm = simple_blur(heightmap_norm, kernel_size=5)
+heightmap_norm = extend_heightmap(heightmap_norm_original)
 
 print(f"Heightmap extended: {heightmap_norm.shape}")
 
@@ -2170,11 +2131,12 @@ def create_tractor_beam_area_light(name, position, target_position, size, power,
     Returns:
         bpy.types.Object: The light object
     """
-    # Create area light
+    # Create area light with soft edges
     light_data = bpy.data.lights.new(name=name, type='AREA')
     light_data.energy = power
     light_data.size = size
     light_data.shape = 'DISK'
+    light_data.spread = math.radians(90)  # Soften light edges
 
     # Create light object
     light_obj = bpy.data.objects.new(name, light_data)
@@ -2394,6 +2356,7 @@ cyan_light.name = "CyanRimLight"
 cyan_light.data.energy = 2000  # Scaled for scene with 1-100 inch prisms
 cyan_light.data.color = SYNTHWAVE_CYAN
 cyan_light.data.size = WORLD_SIZE * 0.5
+cyan_light.data.spread = math.radians(120)  # Soft edge falloff (max 180°)
 cyan_light.rotation_euler = (math.radians(60), 0, 0)
 
 # Magenta key light from side
@@ -2403,6 +2366,7 @@ magenta_light.name = "MagentaKeyLight"
 magenta_light.data.energy = 1200  # Scaled for scene with 1-100 inch prisms
 magenta_light.data.color = SYNTHWAVE_MAGENTA
 magenta_light.data.size = WORLD_SIZE * 0.3
+magenta_light.data.spread = math.radians(120)  # Soft edge falloff
 magenta_light.rotation_euler = (math.radians(45), math.radians(-45), 0)
 
 # Purple fill light from opposite side
@@ -2412,6 +2376,7 @@ purple_light.name = "PurpleFillLight"
 purple_light.data.energy = 800  # Scaled for scene with 1-100 inch prisms
 purple_light.data.color = SYNTHWAVE_PURPLE
 purple_light.data.size = WORLD_SIZE * 0.4
+purple_light.data.spread = math.radians(120)  # Soft edge falloff
 purple_light.rotation_euler = (math.radians(30), math.radians(45), 0)
 
 # Top down soft white light for overall visibility
@@ -2421,6 +2386,7 @@ top_light.name = "TopLight"
 top_light.data.energy = 400  # Scaled for scene with 1-100 inch prisms
 top_light.data.color = (0.9, 0.9, 1.0)
 top_light.data.size = WORLD_SIZE
+top_light.data.spread = math.radians(160)  # Very soft, diffuse lighting
 top_light.rotation_euler = (0, 0, 0)
 
 # Point lights for accent on landscape features
@@ -2451,6 +2417,8 @@ if os.path.exists(CAMERA_SETTINGS_BLEND):
     with bpy.data.libraries.load(CAMERA_SETTINGS_BLEND, link=False) as (data_from, data_to):
         data_to.objects = [name for name in data_from.objects
                           if 'Camera' in name or 'Target' in name]
+        # Also load scenes to get render resolution
+        data_to.scenes = list(data_from.scenes)
 
     # Extract settings from loaded objects
     for obj in data_to.objects:
@@ -2471,6 +2439,16 @@ if os.path.exists(CAMERA_SETTINGS_BLEND):
             camera_settings['target_location'] = tuple(obj.location)
             # Clean up loaded empty
             bpy.data.objects.remove(obj)
+
+    # Extract render resolution from loaded scene
+    for loaded_scene in data_to.scenes:
+        if loaded_scene is not None:
+            camera_settings['render_width'] = loaded_scene.render.resolution_x
+            camera_settings['render_height'] = loaded_scene.render.resolution_y
+            print(f"  Render resolution from file: {camera_settings['render_width']}x{camera_settings['render_height']}")
+            # Clean up loaded scene
+            bpy.data.scenes.remove(loaded_scene)
+            break
 
     # Fall back to defaults if loading failed
     if not camera_settings:
@@ -2579,8 +2557,11 @@ else:
     # Just use defaults - EEVEE is fast out of the box
     pass
 
-scene.render.resolution_x = RENDER_WIDTH
-scene.render.resolution_y = RENDER_HEIGHT
+# Use render dimensions from camera_settings.blend if available, otherwise use defaults
+final_render_width = camera_settings.get('render_width', RENDER_WIDTH)
+final_render_height = camera_settings.get('render_height', RENDER_HEIGHT)
+scene.render.resolution_x = final_render_width
+scene.render.resolution_y = final_render_height
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = 'PNG'
 scene.render.image_settings.color_mode = 'RGBA'
@@ -2650,7 +2631,7 @@ try:
 except Exception as e:
     print(f"Warning: Could not set up compositing: {e}")
 
-print(f"Render: {RENDER_WIDTH}x{RENDER_HEIGHT}, {RENDER_SAMPLES} samples")
+print(f"Render: {final_render_width}x{final_render_height}, {RENDER_SAMPLES} samples")
 
 # ============================================================================
 # SAVE SCENE FILE (for future cache use)

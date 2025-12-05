@@ -110,6 +110,9 @@ COLOR_GENERAL = (0.3, 0.3, 0.5, 1.0)      # Dark gray blue
 def load_heightmap(data_dir=None):
     """Load and normalize the heightmap data.
 
+    The heightmap is transposed so that array[x, y] correctly maps to
+    world coordinates where x is the first axis and y is the second.
+
     Returns:
         tuple: (heightmap_norm_original, h_min, h_max)
     """
@@ -117,6 +120,8 @@ def load_heightmap(data_dir=None):
         data_dir = DATA_DIR
 
     heightmap_original = np.load(os.path.join(data_dir, 'knowledge-heatmap-quiz2.npy'))
+    # Transpose to align with world coordinates (x = first index, y = second index)
+    heightmap_original = heightmap_original.T
     h_min, h_max = heightmap_original.min(), heightmap_original.max()
     heightmap_norm = (heightmap_original - h_min) / (h_max - h_min)
     return heightmap_norm, h_min, h_max
